@@ -1,0 +1,46 @@
+name: ali_fronted
+description: A new Flutter project.
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.5.3 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
+  http: ^1.4.0
+  shared_preferences: ^2.2.2
+  cupertino_icons: ^1.0.8
+  font_awesome_flutter: ^10.7.0
+  fl_chart: ^0.66.0
+  google_fonts: ^6.1.0
+  timeago: ^3.6.0
+  excel: ^2.1.0
+  file_saver: ^0.1.0
+  flutter_markdown: ^0.6.18+2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/illustration_home.png
+    - assets/fondo_home.png
+    - assets/nino_home.png
+    - assets/students_studying.png
+    - assets/logo_ali.png
+    - assets/orientacion_vocacional.jpg
+
+  fonts:
+    - family: PatrickHand
+      fonts:
+        - asset: assets/fonts/PatrickHand-Regular.ttf
