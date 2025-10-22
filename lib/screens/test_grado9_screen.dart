@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'resultado_test9_screen.dart';
 import 'estudiante_home.dart';
+import '../services/api_service.dart';
 
 class TestGrado9Page extends StatefulWidget {
   const TestGrado9Page({Key? key}) : super(key: key);
@@ -161,67 +162,63 @@ class _TestGrado9PageState extends State<TestGrado9Page>
     }
   }
 
-  Future<void> enviarTest() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('access_token');
-    final userId = prefs.getInt('user_id');
-    if (token == null || userId == null) return;
+    Future<void> enviarTest() async {
+  // Mapa esperado por el backend: pregunta_1..pregunta_57 -> 'A'|'B'|'C'
+  final respuestasFinales = {
+    for (var i = 0; i < preguntas.length; i++)
+      'pregunta_${i + 1}': respuestas['pregunta_$i'] ?? ''
+  };
 
-    final url =
-        Uri.parse('http://127.0.0.1:8000/Alipsicoorientadora/tests-grado9/');
-    final respuestasFinales = {
-      for (var i = 0; i < preguntas.length; i++)
-        'pregunta_${i + 1}': respuestas['pregunta_$i'] ?? ''
+  // Llama al servicio centralizado (lee token/userId desde SharedPreferences)
+  final api = ApiService();
+  final resp = await api.enviarTestGrado9(respuestasFinales);
+
+  if (resp['success'] == true) {
+    // Limpia progreso local del cuestionario en este dispositivo
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('grado9_pregunta_actual');
+    await prefs.remove('grado9_respuestas');
+
+    // Extrae el “resultado” devuelto por el backend
+    final data = resp['resultado'];
+    // si tu backend devuelve {"resultado": "..."}:
+    final resultado = (data is Map && data['resultado'] != null)
+        ? data['resultado'].toString()
+        : data.toString();
+
+    // Calcula porcentajes locales para la pantalla de resultado
+    final contador = {'A': 0, 'B': 0, 'C': 0};
+    for (final v in respuestas.values) {
+      if (contador.containsKey(v)) contador[v] = contador[v]! + 1;
+    }
+    final total = respuestas.isEmpty ? 1 : respuestas.length;
+    final porcentajes = {
+      'Me gusta': (contador['A']! * 100 / total),
+      'Me interesa': (contador['B']! * 100 / total),
+      'No me gusta': (contador['C']! * 100 / total),
     };
 
-    final response = await http.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode({
-        'usuario': userId,
-        'respuestas': respuestasFinales,
-      }),
-    );
-
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      await prefs.remove('grado9_pregunta_actual');
-      await prefs.remove('grado9_respuestas');
-
-      final data = jsonDecode(utf8.decode(response.bodyBytes));
-      final resultado = data['resultado'].toString();
-
-      // ---- Ajuste a 3 opciones (A, B, C)
-      final contador = {'A': 0, 'B': 0, 'C': 0};
-      for (final v in respuestas.values) {
-        if (contador.containsKey(v)) {
-          contador[v] = contador[v]! + 1;
-        }
-      }
-      final total = respuestas.isEmpty ? 1 : respuestas.length; // evita /0
-
-      final porcentajes = {
-        'Me gusta': (contador['A']! * 100 / total),
-        'Me interesa': (contador['B']! * 100 / total),
-        'No me gusta': (contador['C']! * 100 / total),
-      };
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ResultadoTest9Screen(
-            resultado: resultado,
-            porcentajes: porcentajes,
-            icono: Icons.lightbulb,
-            color: azulFondoSuave,
-          ),
+    // Navega al resultado
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ResultadoTest9Screen(
+          resultado: resultado,
+          porcentajes: porcentajes,
+          icono: Icons.lightbulb,
+          color: azulFondoSuave,
         ),
-      );
-    }
+      ),
+    );
+  } else {
+    // Muestra error del servicio
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(resp['message'] ?? 'No se pudo enviar el test')),
+    );
   }
-
+}
   // #################################### UI
   @override
   Widget build(BuildContext context) {
