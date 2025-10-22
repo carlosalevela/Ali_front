@@ -23,6 +23,8 @@ dependencies:
   excel: ^2.1.0
   file_saver: ^0.1.0
   flutter_markdown: ^0.6.18+2
+  pdf: ^3.11.0      # o la versión estable más reciente
+  printing: ^5.13.0
 
 dev_dependencies:
   flutter_test:
