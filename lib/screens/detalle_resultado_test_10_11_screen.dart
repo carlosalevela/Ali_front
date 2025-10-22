@@ -26,7 +26,7 @@ class _DetalleResultadoTest1011ScreenState extends State<DetalleResultadoTest101
       _loading = true;
       _error = null;
     });
-    final res = await api.obtenerResultadoTest1011PorId(widget.testId);
+    final res = await api.fetchResultadoTest10y11PorId(widget.testId);
     if (!mounted) return;
     if (res['success'] == true) {
       setState(() {

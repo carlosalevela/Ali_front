@@ -1,13 +1,29 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../env.dart';
 
 class ApiService {
-  final String baseUrl = "http://127.0.0.1:8000/Alipsicoorientadora/usuarios";
+  // Base de API: ahora viene de Env (Vercel/CI o build local)
+  // Mantengo tus prefijos exactos del backend:
+  static const String _usersBase   = '/Alipsicoorientadora/usuarios';
+  static const String _tests9Base  = '/Alipsicoorientadora/tests-grado9';
+  static const String _tests10Base = '/Alipsicoorientadora/tests-grado10-11';
+
+  String get _base => _trimRightSlash(Env.apiBaseUrl);
+  static String _trimRightSlash(String s) => s.endsWith('/') ? s.substring(0, s.length - 1) : s;
+
+  Uri _u(String path, {Map<String, dynamic>? query}) {
+    final p = path.startsWith('/') ? path : '/$path';
+    final qp = query?.map((k, v) => MapEntry(k, v?.toString() ?? ''));
+    return Uri.parse('$_base$p').replace(queryParameters: qp);
+  }
+
+  // ==================== AUTH / USUARIOS ====================
 
   // Función de inicio de sesión
   Future<Map<String, dynamic>> login(String username, String password, String email) async {
-    final url = Uri.parse('$baseUrl/login/');
+    final url = _u('$_usersBase/login/');
     final response = await http.post(
       url,
       headers: {'Content-Type': 'application/json'},
@@ -23,15 +39,15 @@ class ApiService {
       final decoded = _decodeJWT(data['access']);
       final rol = decoded['rol'];
       final nombre = decoded['nombre'];
-      final grado = decoded['grado'].toString();
-      final edad = decoded['edad'].toString();
-      final userId = decoded['user_id'];
+      final grado = decoded['grado']?.toString() ?? '';
+      final edad = decoded['edad']?.toString() ?? '';
+      final userId = (decoded['user_id'] as num?)?.toInt() ?? 0;
 
       SharedPreferences prefs = await SharedPreferences.getInstance();
       await prefs.setString('access_token', data['access']);
       await prefs.setString('refresh_token', data['refresh']);
-      await prefs.setString('rol', rol);
-      await prefs.setString('nombre', nombre);
+      await prefs.setString('rol', rol ?? '');
+      await prefs.setString('nombre', nombre ?? '');
       await prefs.setString('grado', grado);
       await prefs.setString('edad', edad);
       await prefs.setInt('user_id', userId);
@@ -44,7 +60,7 @@ class ApiService {
 
   // Función de registro
   Future<Map<String, dynamic>> register(Map<String, dynamic> userData) async {
-    final url = Uri.parse('$baseUrl/registro/');
+    final url = _u('$_usersBase/registro/');
     final response = await http.post(
       url,
       headers: {'Content-Type': 'application/json'},
@@ -62,7 +78,7 @@ class ApiService {
   Future<List<Map<String, dynamic>>> fetchUsuarios() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('access_token');
-    final url = Uri.parse('$baseUrl/usuarios/');
+    final url = _u('$_usersBase/usuarios/');
 
     final response = await http.get(
       url,
@@ -89,20 +105,14 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('access_token');
 
-    final queryParameters = {
+    final url = _u('$_usersBase/usuarios/', query: {
       if (nombre.isNotEmpty) 'nombre': nombre,
       if (email.isNotEmpty) 'email': email,
       if (username.isNotEmpty) 'username': username,
-    };
-
-    final uri = Uri.http(
-      '127.0.0.1:8000',
-      '/Alipsicoorientadora/usuarios/usuarios/',
-      queryParameters,
-    );
+    });
 
     final response = await http.get(
-      uri,
+      url,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
@@ -121,7 +131,7 @@ class ApiService {
   Future<bool> deleteUsuario(int id) async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('access_token');
-    final url = Uri.parse('$baseUrl/usuarios/$id/');
+    final url = _u('$_usersBase/usuarios/$id/');
 
     final response = await http.delete(
       url,
@@ -131,14 +141,14 @@ class ApiService {
       },
     );
 
-    return response.statusCode == 200;
+    return response.statusCode == 200 || response.statusCode == 204;
   }
 
   // Editar un usuario
   Future<bool> editarUsuario(int id, Map<String, dynamic> data) async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('access_token');
-    final url = Uri.parse('$baseUrl/usuarios/$id/');
+    final url = _u('$_usersBase/usuarios/$id/');
 
     final response = await http.put(
       url,
@@ -161,13 +171,15 @@ class ApiService {
     return jsonDecode(decoded);
   }
 
+  // ========================= TESTS GRADO 9 =========================
+
   // Enviar test grado 9
   Future<Map<String, dynamic>> enviarTestGrado9(Map<String, dynamic> respuestas) async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('access_token');
     final userId = prefs.getInt('user_id');
 
-    final url = Uri.parse('http://127.0.0.1:8000/Alipsicoorientadora/tests-grado9/');
+    final url = _u('$_tests9Base/');
 
     final response = await http.post(
       url,
@@ -192,13 +204,116 @@ class ApiService {
     }
   }
 
+  // Obtener resultado test grado 9 por ID
+  Future<Map<String, dynamic>> fetchResultadoTest9PorId(int testId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('access_token');
+
+    final url = _u('$_tests9Base/resultado/$testId/');
+
+    final response = await http.get(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Error al obtener resultado test: ${response.statusCode}');
+    }
+  }
+
+  // Obtener tests grado 9 por usuario
+  Future<List<dynamic>> fetchTestsGrado9PorUsuario(int userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('access_token');
+
+    final url = _u('$_tests9Base/usuario/$userId/');
+
+    final response = await http.get(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Error al obtener tests de usuario: ${response.statusCode}');
+    }
+  }
+
+  // Listar mis tests 9
+  Future<List<Map<String, dynamic>>> listarMisTestsGrado9() async {
+    final url = _u('$_tests9Base/'); // GET list
+    final resp = await http.get(
+      url,
+      headers: await _authHeaders(),
+    );
+
+    if (resp.statusCode == 200) {
+      final List data = jsonDecode(resp.body);
+      return data.cast<Map<String, dynamic>>();
+    } else {
+      throw Exception('No se pudo cargar el historial (${resp.statusCode})');
+    }
+  }
+
+  Future<Map<String, dynamic>> obtenerResultadoTest9PorId(int testId) async {
+    final url = _u('$_tests9Base/resultado/$testId/');
+    final resp = await http.get(
+      url,
+      headers: await _authHeaders(),
+    );
+
+    if (resp.statusCode == 200) {
+      final data = jsonDecode(resp.body);
+      return {'success': true, 'data': data};
+    } else {
+      return {
+        'success': false,
+        'error': 'No se pudo obtener el resultado ($testId): ${resp.statusCode}'
+      };
+    }
+  }
+
+  // Feed admin 9 con filtros
+  Future<List<Map<String, dynamic>>> fetchTestsGrado9({
+    String? estado,
+    String? orden,
+    int? limit,
+    int? offset,
+  }) async {
+    final url = _u('$_tests9Base/', query: {
+      if (estado != null && estado.isNotEmpty) 'estado': estado,
+      if (orden  != null && orden.isNotEmpty)  'orden': orden,
+      if (limit  != null) 'limit': '$limit',
+      if (offset != null) 'offset': '$offset',
+    });
+    final resp = await http.get(url, headers: await _authHeaders());
+
+    if (resp.statusCode == 200) {
+      final data = jsonDecode(resp.body);
+      return (data as List).cast<Map<String, dynamic>>();
+    } else {
+      throw Exception('Error al listar tests 9° (${resp.statusCode})');
+    }
+  }
+
+  // ===================== TESTS GRADO 10/11 =====================
+
   // Enviar test grado 10/11
   Future<Map<String, dynamic>> enviarTestGrado10y11(Map<String, String> respuestas) async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('access_token');
     final userId = prefs.getInt('user_id');
 
-    final url = Uri.parse('http://127.0.0.1:8000/Alipsicoorientadora/tests-grado10-11/');
+    final url = _u('$_tests10Base/');
 
     final response = await http.post(
       url,
@@ -223,56 +338,12 @@ class ApiService {
     }
   }
 
-  // Obtener resultado test grado 9 por ID
-  Future<Map<String, dynamic>> fetchResultadoTest9PorId(int testId) async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('access_token');
-
-    final url = Uri.parse('http://127.0.0.1:8000/Alipsicoorientadora/tests-grado9/resultado/$testId/');
-
-    final response = await http.get(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    } else {
-      throw Exception('Error al obtener resultado test: ${response.statusCode}');
-    }
-  }
-
-  // Obtener tests grado 9 por usuario
-  Future<List<dynamic>> fetchTestsGrado9PorUsuario(int userId) async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('access_token');
-
-    final url = Uri.parse('http://127.0.0.1:8000/Alipsicoorientadora/tests-grado9/usuario/$userId/');
-
-    final response = await http.get(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    } else {
-      throw Exception('Error al obtener tests de usuario: ${response.statusCode}');
-    }
-  }
-
-  // Obtener tests grado 10/11 por usuario
+  // Obtener tests 10/11 por usuario
   Future<List<dynamic>> fetchTestsGrado10y11PorUsuario(int userId) async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('access_token');
 
-    final url = Uri.parse('http://127.0.0.1:8000/Alipsicoorientadora/tests-grado10-11/usuario/$userId/');
+    final url = _u('$_tests10Base/usuario/$userId/');
 
     final response = await http.get(
       url,
@@ -294,7 +365,7 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('access_token');
 
-    final url = Uri.parse('http://127.0.0.1:8000/Alipsicoorientadora/tests-grado10-11/resultado/$testId/');
+    final url = _u('$_tests10Base/resultado/$testId/');
 
     final response = await http.get(
       url,
@@ -311,65 +382,12 @@ class ApiService {
     }
   }
 
-  // ➜ Agrega esto dentro de tu clase ApiService
-
-  Future<List<Map<String, dynamic>>> listarMisTestsGrado9() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('access_token');
-
-    final url = Uri.parse('http://127.0.0.1:8000/Alipsicoorientadora/tests-grado9/'); // GET list
-    final resp = await http.get(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-    );
-
-    if (resp.statusCode == 200) {
-      final List data = jsonDecode(resp.body);
-      // Esperado: [{id, resultado, fecha_realizacion, ...}, ...]
-      return data.cast<Map<String, dynamic>>();
-    } else {
-      throw Exception('No se pudo cargar el historial (${resp.statusCode})');
-    }
-  }
-
-  Future<Map<String, dynamic>> obtenerResultadoTest9PorId(int testId) async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('access_token');
-
-    final url = Uri.parse('http://127.0.0.1:8000/Alipsicoorientadora/tests-grado9/resultado/$testId/');
-    final resp = await http.get(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-    );
-
-    if (resp.statusCode == 200) {
-      final data = jsonDecode(resp.body);
-      return {'success': true, 'data': data};
-    } else {
-      return {
-        'success': false,
-        'error': 'No se pudo obtener el resultado ($testId): ${resp.statusCode}'
-      };
-    }
-  }
-
+  // Listar mis tests 10/11
   Future<List<Map<String, dynamic>>> listarMisTestsGrado10y11() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('access_token');
-
-    final url = Uri.parse('http://127.0.0.1:8000/Alipsicoorientadora/tests-grado10-11/');
+    final url = _u('$_tests10Base/');
     final resp = await http.get(
       url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
+      headers: await _authHeaders(),
     );
 
     if (resp.statusCode == 200) {
@@ -380,85 +398,20 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> obtenerResultadoTest1011PorId(int testId) async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('access_token');
-
-    final url = Uri.parse('http://127.0.0.1:8000/Alipsicoorientadora/tests-grado10-11/resultado/$testId/');
-    final resp = await http.get(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-    );
-
-    if (resp.statusCode == 200) {
-      final data = jsonDecode(resp.body);
-      return {'success': true, 'data': data};
-    } else {
-      return {
-        'success': false,
-        'error': 'No se pudo obtener el resultado ($testId): ${resp.statusCode}'
-      };
-    }
-  }
-
-  // ===============================
-  // PROGRESO: feeds y helpers (ADD)
-  // ===============================
-
-  // Lista general (admin) de tests 9° con filtros (?estado=&orden=&limit=&offset=)
-  Future<List<Map<String, dynamic>>> fetchTestsGrado9({
-    String? estado,      // EN_PROGRESO | FINALIZADO
-    String? orden,       // actividad (usa fecha_ultima_actividad)
-    int? limit,          // si tu back usa LimitOffsetPagination
-    int? offset,
-  }) async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('access_token');
-
-    final q = <String, String>{};
-    if (estado != null && estado.isNotEmpty) q['estado'] = estado;
-    if (orden  != null && orden.isNotEmpty)  q['orden']  = orden;
-    if (limit  != null) q['limit']  = '$limit';
-    if (offset != null) q['offset'] = '$offset';
-
-    final uri = Uri.http('127.0.0.1:8000', '/Alipsicoorientadora/tests-grado9/', q);
-    final resp = await http.get(uri, headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    });
-
-    if (resp.statusCode == 200) {
-      final data = jsonDecode(resp.body);
-      return (data as List).cast<Map<String, dynamic>>();
-    } else {
-      throw Exception('Error al listar tests 9° (${resp.statusCode})');
-    }
-  }
-
-  // Lista general (admin) de tests 10/11 con filtros (?estado=&orden=&limit=&offset=)
+  // Feed admin 10/11 con filtros
   Future<List<Map<String, dynamic>>> fetchTestsGrado10y11({
-    String? estado,      // EN_PROGRESO | FINALIZADO
-    String? orden,       // actividad
+    String? estado,
+    String? orden,
     int? limit,
     int? offset,
   }) async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('access_token');
-
-    final q = <String, String>{};
-    if (estado != null && estado.isNotEmpty) q['estado'] = estado;
-    if (orden  != null && orden.isNotEmpty)  q['orden']  = orden;
-    if (limit  != null) q['limit']  = '$limit';
-    if (offset != null) q['offset'] = '$offset';
-
-    final uri = Uri.http('127.0.0.1:8000', '/Alipsicoorientadora/tests-grado10-11/', q);
-    final resp = await http.get(uri, headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
+    final url = _u('$_tests10Base/', query: {
+      if (estado != null && estado.isNotEmpty) 'estado': estado,
+      if (orden  != null && orden.isNotEmpty)  'orden': orden,
+      if (limit  != null) 'limit': '$limit',
+      if (offset != null) 'offset': '$offset',
     });
+    final resp = await http.get(url, headers: await _authHeaders());
 
     if (resp.statusCode == 200) {
       final data = jsonDecode(resp.body);
@@ -467,6 +420,8 @@ class ApiService {
       throw Exception('Error al listar tests 10/11 (${resp.statusCode})');
     }
   }
+
+  // =================== PROGRESO / HELPERS ===================
 
   // Formatea una línea de progreso legible para la UI
   String _formatProgreso(Map<String, dynamic> t, {required int total}) {
@@ -480,7 +435,7 @@ class ApiService {
     return '—';
   }
 
-  // Devuelve el mejor test para pintar progreso (prefiere EN_PROGRESO reciente; si no, el último finalizado)
+  // Devuelve el mejor test para pintar progreso
   Map<String, dynamic>? _pickBestTestForUser(
     List<Map<String, dynamic>> feed,
     int userId,
@@ -488,31 +443,21 @@ class ApiService {
     final mine = feed.where((t) => t['usuario'] == userId).toList();
     if (mine.isEmpty) return null;
 
-    // Prioriza EN_PROGRESO (asume feed ya viene ordenado si usas orden=actividad)
     final enProg = mine.where((t) => t['estado'] == 'EN_PROGRESO').toList();
     if (enProg.isNotEmpty) return enProg.first;
 
-    // Si no hay en progreso, toma el más reciente por fecha_realizacion
     mine.sort((a, b) => (b['fecha_realizacion'] ?? '').toString().compareTo((a['fecha_realizacion'] ?? '').toString()));
     return mine.first;
   }
 
-  // ===============================
-  // ENDPOINTS DE ALTO NIVEL (ADD)
-  // ===============================
-
-  // ➜ Progreso consolidado para un usuario de 9°
   Future<Map<String, dynamic>> progresoUsuarioGrado9(int userId, {int total = 57}) async {
     try {
-      // 1) Feed EN_PROGRESO ordenado por actividad (admin)
       final feedProg = await fetchTestsGrado9(estado: 'EN_PROGRESO', orden: 'actividad', limit: 200, offset: 0);
       Map<String, dynamic>? best = _pickBestTestForUser(feedProg, userId);
 
-      // 2) Si no hay, cae al endpoint por usuario (ya lo tienes)
       if (best == null) {
         final testsUsr = await fetchTestsGrado9PorUsuario(userId);
         if (testsUsr.isNotEmpty) {
-          // vienen ya ordenados por -fecha_realizacion desde el back
           best = Map<String, dynamic>.from(testsUsr.first);
         }
       }
@@ -532,7 +477,6 @@ class ApiService {
     }
   }
 
-  // ➜ Progreso consolidado para un usuario de 10/11
   Future<Map<String, dynamic>> progresoUsuarioGrado10y11(int userId, {int total = 40}) async {
     try {
       final feedProg = await fetchTestsGrado10y11(estado: 'EN_PROGRESO', orden: 'actividad', limit: 200, offset: 0);
@@ -564,28 +508,18 @@ class ApiService {
 
   /// 1) Solicitar enlace de recuperación
   Future<Map<String, dynamic>> solicitarRecuperacion(String email) async {
-    // OJO: en tu urls.py está escrito con doble "ra": "recuperaracion"
-    final url = Uri.parse('$baseUrl/recuperacion/contraseña/');
-
+    final url = _u('$_usersBase/recuperacion/contraseña/'); // ajusta si en backend es /contrasena/
     try {
       final resp = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'email': email.trim()}),
       );
-
-      // El backend responde 200 siempre (no revela si existe el correo)
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body);
-        return {
-          'success': true,
-          'detail': data['detail'] ?? 'Si el correo existe, enviaremos un enlace.'
-        };
+        return {'success': true, 'detail': data['detail'] ?? 'Si el correo existe, enviaremos un enlace.'};
       } else {
-        return {
-          'success': false,
-          'message': 'Error ${resp.statusCode}: ${resp.body}'
-        };
+        return {'success': false, 'message': 'Error ${resp.statusCode}: ${resp.body}'};
       }
     } catch (e) {
       return {'success': false, 'message': 'Error de red: $e'};
@@ -598,35 +532,20 @@ class ApiService {
     required String token,
     required String newPassword,
   }) async {
-    // En tu proyecto: "recuperacion/contraseña-confirmada" (sin slash final en tu captura).
-    // Te dejo con barra final; si te diera 301/404, prueba quitándola.
-    final url = Uri.parse('$baseUrl/recuperacion/contrasena-confirmada/');
-
+    final url = _u('$_usersBase/recuperacion/contrasena-confirmada/'); // confirma tu ruta exacta en backend
     try {
       final resp = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'uid': uid,
-          'token': token,
-          'new_password': newPassword, // <- clave que acordaste en backend
-        }),
+        body: jsonEncode({'uid': uid, 'token': token, 'new_password': newPassword}),
       );
-
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body);
         return {'success': true, 'detail': data['detail'] ?? 'Contraseña actualizada.'};
       } else if (resp.statusCode == 400) {
-        // errores de validación (token expirado, uid inválido, etc.)
-        return {
-          'success': false,
-          'message': jsonDecode(resp.body),
-        };
+        return {'success': false, 'message': jsonDecode(resp.body)};
       } else {
-        return {
-          'success': false,
-          'message': 'Error ${resp.statusCode}: ${resp.body}',
-        };
+        return {'success': false, 'message': 'Error ${resp.statusCode}: ${resp.body}'};
       }
     } catch (e) {
       return {'success': false, 'message': 'Error de red: $e'};
@@ -643,7 +562,7 @@ class ApiService {
     final token = prefs.getString('access_token');
     return {
       'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
+      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
     };
   }
 
@@ -665,9 +584,7 @@ class ApiService {
 
   /// Crea o recupera el borrador EN_PROGRESO (POST /tests-grado9/iniciar/)
   Future<Map<String, dynamic>> iniciarOContinuarTestGrado9() async {
-    final url = Uri.parse(
-      'http://127.0.0.1:8000/Alipsicoorientadora/tests-grado9/iniciar/',
-    );
+    final url = _u('$_tests9Base/iniciar/');
     final resp = await http.post(url, headers: await _authHeaders());
 
     if (resp.statusCode == 201 || resp.statusCode == 200) {
@@ -676,9 +593,7 @@ class ApiService {
       await _saveCurrentTest9Id(id);
       return data;
     } else {
-      throw Exception(
-        'No se pudo iniciar/retomar el test 9° (${resp.statusCode}): ${resp.body}',
-      );
+      throw Exception('No se pudo iniciar/retomar el test 9° (${resp.statusCode}): ${resp.body}');
     }
   }
 
@@ -686,9 +601,7 @@ class ApiService {
   Future<Map<String, dynamic>> cargarTestGrado9Actual() async {
     final currentId = await _getCurrentTest9Id();
     if (currentId != null) {
-      final url = Uri.parse(
-        'http://127.0.0.1:8000/Alipsicoorientadora/tests-grado9/$currentId/',
-      );
+      final url = _u('$_tests9Base/$currentId/');
       final resp = await http.get(url, headers: await _authHeaders());
       if (resp.statusCode == 200) {
         return jsonDecode(resp.body) as Map<String, dynamic>;
@@ -699,7 +612,7 @@ class ApiService {
     return await iniciarOContinuarTestGrado9();
   }
 
-  /// Guarda UNA respuesta (PATCH /{id}/progreso/). Acepta "A"/"B"/"C" o texto.
+  /// Guarda UNA respuesta (PATCH /{id}/progreso/)
   Future<Map<String, dynamic>> guardarRespuestaTest9({
     required int pregunta, // 1..57
     required String respuesta,
@@ -708,9 +621,7 @@ class ApiService {
     final id = await _getCurrentTest9Id();
     if (id == null) throw Exception('No hay test 9° en curso.');
 
-    final url = Uri.parse(
-      'http://127.0.0.1:8000/Alipsicoorientadora/tests-grado9/$id/progreso/',
-    );
+    final url = _u('$_tests9Base/$id/progreso/');
 
     final payload = <String, dynamic>{
       'pregunta': pregunta,
@@ -732,14 +643,11 @@ class ApiService {
       }
       return data;
     } else {
-      throw Exception(
-        'Error al guardar respuesta (${resp.statusCode}): ${resp.body}',
-      );
+      throw Exception('Error al guardar respuesta (${resp.statusCode}): ${resp.body}');
     }
   }
 
   /// Guarda VARIAS respuestas de una (PATCH /{id}/progreso/)
-  /// Ej: { 12: "A", 13: "B" }
   Future<Map<String, dynamic>> guardarRespuestasTest9Bulk(
     Map<int, String> respuestas, {
     int? ultimaPregunta,
@@ -747,9 +655,7 @@ class ApiService {
     final id = await _getCurrentTest9Id();
     if (id == null) throw Exception('No hay test 9° en curso.');
 
-    final url = Uri.parse(
-      'http://127.0.0.1:8000/Alipsicoorientadora/tests-grado9/$id/progreso/',
-    );
+    final url = _u('$_tests9Base/$id/progreso/');
 
     final mapa = <String, String>{};
     respuestas.forEach((i, r) => mapa['pregunta_$i'] = r);
@@ -772,9 +678,7 @@ class ApiService {
       }
       return data;
     } else {
-      throw Exception(
-        'Error al guardar respuestas (${resp.statusCode}): ${resp.body}',
-      );
+      throw Exception('Error al guardar respuestas (${resp.statusCode}): ${resp.body}');
     }
   }
 
@@ -783,9 +687,7 @@ class ApiService {
     final id = await _getCurrentTest9Id();
     if (id == null) return null;
 
-    final url = Uri.parse(
-      'http://127.0.0.1:8000/Alipsicoorientadora/tests-grado9/$id/',
-    );
+    final url = _u('$_tests9Base/$id/');
     final resp = await http.get(url, headers: await _authHeaders());
 
     if (resp.statusCode == 200) {
