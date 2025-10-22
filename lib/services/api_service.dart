@@ -508,7 +508,7 @@ class ApiService {
 
   /// 1) Solicitar enlace de recuperación
   Future<Map<String, dynamic>> solicitarRecuperacion(String email) async {
-    final url = _u('$_usersBase/recuperacion/contraseña/'); // ajusta si en backend es /contrasena/
+    final url = _u('$_usersBase/recuperacion/contrasena/'); // ajusta si en backend es /contrasena/
     try {
       final resp = await http.post(
         url,
