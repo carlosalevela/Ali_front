@@ -308,7 +308,7 @@ class _InfoCards extends StatelessWidget {
     const _CardData(Icons.settings_suggest_rounded, 'Metodología RIASEC',
         'Modelo RIASEC: Realista, Investigativa, Artística, Social, Emprendedora y Convencional.'),
     const _CardData(Icons.compare_arrows_rounded, '¿Cómo funciona?',
-        'Respondes 40 preguntas. Analizamos tus respuestas y te recomendamos una modalidad.'),
+        'Respondes las preguntas. Analizamos tus respuestas y te recomendamos una modalidad.'),
     const _CardData(Icons.emoji_events, 'Beneficios',
         '• Identificas tus gustos\n• Tomas decisiones seguras\n• Recibes orientación\n• Evitas equivocaciones'),
   ];
