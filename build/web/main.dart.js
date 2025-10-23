@@ -54425,10 +54425,10 @@ A.aU1.prototype={
 $1(a){return J.c(J.Y(a,"id"),J.Y(this.a,"id"))},
 $S:17}
 A.hr.prototype={
-Ly(a,b){var s,r,q="https://web-production-fada9.up.railway.app",p=B.c.c9(a,"/")?a:"/"+a
+Ly(a,b){var s,r,q="https://web-production-fada9.up.railway.app/",p=B.c.c9(a,"/")?a:"/"+a
 if(b==null)s=null
 else{r=t.N
-s=b.rp(b,new A.agu(),r,r)}return A.hS((B.c.hG(q,"/")?B.c.V(q,0,42):q)+p).a5v(0,s)},
+s=b.rp(b,new A.agu(),r,r)}return A.hS((B.c.hG(q,"/")?B.c.V(q,0,43):q)+p).a5v(0,s)},
 iz(a){return this.Ly(a,null)},
 la(a,b,c){return this.aDA(a,b,c)},
 aDA(a,a0,a1){var s=0,r=A.K(t.P),q,p=this,o,n,m,l,k,j,i,h,g,f,e,d,c,b
@@ -54873,7 +54873,7 @@ return A.J($async$A_,r)},
 B0(a){return this.a8a(a)},
 a8a(a){var s=0,r=A.K(t.P),q,p=2,o=[],n=this,m,l,k,j,i,h,g,f
 var $async$B0=A.G(function(b,c){if(b===1){o.push(c)
-s=p}while(true)switch(s){case 0:g=n.iz("/Alipsicoorientadora/usuarios/recuperacion/contrase\xf1a/")
+s=p}while(true)switch(s){case 0:g=n.iz("/Alipsicoorientadora/usuarios/recuperacion/contrasena/")
 p=4
 j=t.N
 i=A.a4(["Content-Type","application/json"],j,j)
@@ -128245,7 +128245,7 @@ B.xo=new A.jP(6,"DOCUMENT_FRAGMENT")
 B.bk=new A.Ak(0,"forward")
 B.ko=new A.Ak(1,"reverse")
 B.a4v=new A.aV(63069,"MaterialIcons",null,!1)
-B.aw5=new A.vJ(B.a4v,"\xbfC\xf3mo funciona?","Respondes 40 preguntas. Analizamos tus respuestas y te recomendamos una modalidad.")
+B.aw5=new A.vJ(B.a4v,"\xbfC\xf3mo funciona?","Respondes las preguntas. Analizamos tus respuestas y te recomendamos una modalidad.")
 B.a4y=new A.aV(983397,"MaterialIcons",null,!1)
 B.aw6=new A.vJ(B.a4y,"Metodolog\xeda RIASEC","Modelo RIASEC: Realista, Investigativa, Art\xedstica, Social, Emprendedora y Convencional.")
 B.a4o=new A.aV(58618,"MaterialIcons",null,!1)
