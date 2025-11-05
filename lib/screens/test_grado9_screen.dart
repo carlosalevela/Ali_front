@@ -1,10 +1,11 @@
+import 'dart:ui';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'resultado_test9_screen.dart';
 import 'estudiante_home.dart';
-import '../services/api_service.dart';
 
 class TestGrado9Page extends StatefulWidget {
   const TestGrado9Page({Key? key}) : super(key: key);
@@ -15,12 +16,7 @@ class TestGrado9Page extends StatefulWidget {
 
 class _TestGrado9PageState extends State<TestGrado9Page>
     with TickerProviderStateMixin {
-  // ----------- NUEVA PALETA (más suave)
-  static const Color azulFondoSuave = Color(0xFF8DB9E4); // fondo base
-  static const Color azulSeleccion   = Color(0xFFA7D8F5); // selección opción
-  static const Color azulAcento      = Color(0xFF4FC3F7); // acento / barras
-
-  // ---------------------- 57 preguntas completas
+  // ---------------------- 57 preguntas completas (SIN CAMBIOS)
   final List<String> preguntas = [
     // COMERCIO — Emprendimiento y Fomento Empresarial (5)
     '¿Te gustaría aprender a organizar gastos, tareas y avances de un proyecto sencillo?',
@@ -118,13 +114,11 @@ class _TestGrado9PageState extends State<TestGrado9Page>
     _cargarProgreso();
   }
 
-  // ---------- PERSISTENCIA
   Future<void> _cargarProgreso() async {
     final prefs = await SharedPreferences.getInstance();
     final savedIndex = prefs.getInt('grado9_pregunta_actual') ?? 0;
     final savedResp = prefs.getString('grado9_respuestas');
 
-    // Protege índice por si cambió el número total de preguntas
     final nuevoIndex = savedIndex.clamp(0, preguntas.length - 1);
 
     setState(() {
@@ -145,7 +139,6 @@ class _TestGrado9PageState extends State<TestGrado9Page>
     await prefs.setString('grado9_respuestas', jsonEncode(respuestas));
   }
 
-  // ---------- NAVEGACIÓN
   void siguientePregunta() {
     if (preguntaActual < preguntas.length - 1) {
       setState(() => preguntaActual++);
@@ -162,69 +155,71 @@ class _TestGrado9PageState extends State<TestGrado9Page>
     }
   }
 
-    Future<void> enviarTest() async {
-  // Mapa esperado por el backend: pregunta_1..pregunta_57 -> 'A'|'B'|'C'
-  final respuestasFinales = {
-    for (var i = 0; i < preguntas.length; i++)
-      'pregunta_${i + 1}': respuestas['pregunta_$i'] ?? ''
-  };
-
-  // Llama al servicio centralizado (lee token/userId desde SharedPreferences)
-  final api = ApiService();
-  final resp = await api.enviarTestGrado9(respuestasFinales);
-
-  if (resp['success'] == true) {
-    // Limpia progreso local del cuestionario en este dispositivo
+  Future<void> enviarTest() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('grado9_pregunta_actual');
-    await prefs.remove('grado9_respuestas');
+    final token = prefs.getString('access_token');
+    final userId = prefs.getInt('user_id');
+    if (token == null || userId == null) return;
 
-    // Extrae el “resultado” devuelto por el backend
-    final data = resp['resultado'];
-    // si tu backend devuelve {"resultado": "..."}:
-    final resultado = (data is Map && data['resultado'] != null)
-        ? data['resultado'].toString()
-        : data.toString();
-
-    // Calcula porcentajes locales para la pantalla de resultado
-    final contador = {'A': 0, 'B': 0, 'C': 0};
-    for (final v in respuestas.values) {
-      if (contador.containsKey(v)) contador[v] = contador[v]! + 1;
-    }
-    final total = respuestas.isEmpty ? 1 : respuestas.length;
-    final porcentajes = {
-      'Me gusta': (contador['A']! * 100 / total),
-      'Me interesa': (contador['B']! * 100 / total),
-      'No me gusta': (contador['C']! * 100 / total),
+    final url = Uri.parse('http://127.0.0.1:8000/Alipsicoorientadora/tests-grado9/');
+    final respuestasFinales = {
+      for (var i = 0; i < preguntas.length; i++)
+        'pregunta_${i + 1}': respuestas['pregunta_$i'] ?? ''
     };
 
-    // Navega al resultado
-    if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ResultadoTest9Screen(
-          resultado: resultado,
-          porcentajes: porcentajes,
-          icono: Icons.lightbulb,
-          color: azulFondoSuave,
+    final response = await http.post(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'usuario': userId,
+        'respuestas': respuestasFinales,
+      }),
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      await prefs.remove('grado9_pregunta_actual');
+      await prefs.remove('grado9_respuestas');
+
+      final data = jsonDecode(utf8.decode(response.bodyBytes));
+      final resultado = data['resultado'].toString();
+
+      final contador = {'A': 0, 'B': 0, 'C': 0};
+      for (final v in respuestas.values) {
+        if (contador.containsKey(v)) {
+          contador[v] = contador[v]! + 1;
+        }
+      }
+      final total = respuestas.isEmpty ? 1 : respuestas.length;
+
+      final porcentajes = {
+        'Me gusta': (contador['A']! * 100 / total),
+        'Me interesa': (contador['B']! * 100 / total),
+        'No me gusta': (contador['C']! * 100 / total),
+      };
+
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ResultadoTest9Screen(
+            resultado: resultado,
+            porcentajes: porcentajes,
+            icono: Icons.lightbulb,
+            color: const Color(0xFF93C5FD),
+          ),
         ),
-      ),
-    );
-  } else {
-    // Muestra error del servicio
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(resp['message'] ?? 'No se pudo enviar el test')),
-    );
+      );
+    }
   }
-}
-  // #################################### UI
+
   @override
   Widget build(BuildContext context) {
     final pregunta = preguntas[preguntaActual];
     final respuestaSeleccionada = respuestas['pregunta_$preguntaActual'] ?? '';
-    final progreso = respuestas.length / preguntas.length;
+    final double progreso = preguntas.isEmpty ? 0 : (respuestas.length / preguntas.length);
 
     if (mostrarModal) {
       Future.microtask(() {
@@ -232,411 +227,929 @@ class _TestGrado9PageState extends State<TestGrado9Page>
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (_) => AlertDialog(
-            title: const Text('¿Enviar respuestas?'),
-            content: const Text(
-                'Una vez enviadas no podrás modificarlas. ¿Estás seguro?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  enviarTest();
-                },
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: azulFondoSuave,
-                    shape: const StadiumBorder()),
-                child: const Text('Enviar'),
-              ),
-            ],
-          ),
+          builder: (_) => _buildModernDialog(),
         );
       });
     }
 
     return Scaffold(
-      backgroundColor: azulFondoSuave,
       body: Stack(
         children: [
-          const Positioned.fill(child: _AnimatedBackground()),
-          // -------- Overlay degradado animado ------------
-          const Positioned.fill(child: _GradientOverlay()),
-          SafeArea(
-            child: IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white),
-              onPressed: () => Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (_) => const EstudianteHome()),
-              ),
-            ),
-          ),
+          const Positioned.fill(child: _AcademicBackground()),
           Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 520),
-                child: AnimatedScale(
-                  duration: const Duration(milliseconds: 500),
-                  scale: 1.0,
-                  child: Container(
-                    padding: const EdgeInsets.fromLTRB(24, 28, 24, 32),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.90),
-                      borderRadius: BorderRadius.circular(28),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.12),
-                          blurRadius: 16,
-                          offset: const Offset(0, 8),
-                        )
-                      ],
-                      border: Border.all(
-                          color: Colors.white.withOpacity(0.35), width: 1.3),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // PROGRESO
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: LinearProgressIndicator(
-                            minHeight: 8,
-                            value: progreso,
-                            backgroundColor: azulSeleccion.withOpacity(.25),
-                            valueColor: const AlwaysStoppedAnimation<Color>(
-                                azulAcento),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: Text(
-                            '${(progreso * 100).toStringAsFixed(0)}%',
-                            style: TextStyle(
-                                color: azulAcento,
-                                fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        Text(
-                          'Pregunta ${preguntaActual + 1} de ${preguntas.length}',
-                          style: const TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 14),
-                        Text(
-                          pregunta,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                              fontSize: 20, fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(height: 30),
-
-                        // OPCIONES
-                        ...opciones.entries.map((opcion) {
-                          final estaSeleccionado =
-                              respuestaSeleccionada == opcion.key;
-                          return GestureDetector(
-                            onTap: () {
-                              setState(() => respuestas[
-                                      'pregunta_$preguntaActual'] =
-                                  opcion.key);
-                              _guardarProgreso();
-                            },
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 350),
-                              curve: Curves.easeOut,
-                              margin:
-                                  const EdgeInsets.symmetric(vertical: 8.0),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 18, vertical: 14),
-                              decoration: BoxDecoration(
-                                color: estaSeleccionado
-                                    ? azulSeleccion
-                                    : Colors.white,
-                                borderRadius: BorderRadius.circular(22),
-                                border: Border.all(
-                                    color: estaSeleccionado
-                                        ? azulAcento
-                                        : azulSeleccion.withOpacity(0.3),
-                                    width: 2),
-                                boxShadow: [
-                                  if (estaSeleccionado)
-                                    BoxShadow(
-                                      color: azulSeleccion.withOpacity(.35),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 6),
-                                    ),
-                                ],
-                              ),
-                              child: Row(
-                                children: [
-                                  CircleAvatar(
-                                    radius: 18,
-                                    backgroundColor: estaSeleccionado
-                                        ? Colors.white
-                                        : azulSeleccion,
-                                    child: Text(
-                                      opcion.key,
-                                      style: TextStyle(
-                                          color: estaSeleccionado
-                                              ? azulSeleccion
-                                              : Colors.white,
-                                          fontWeight: FontWeight.bold),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: Text(
-                                      opcion.value,
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: estaSeleccionado
-                                            ? FontWeight.w600
-                                            : FontWeight.w400,
-                                        color: estaSeleccionado
-                                            ? Colors.white
-                                            : Colors.black87,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                        const SizedBox(height: 26),
-
-                        // BOTONES
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            if (preguntaActual > 0)
-                              _BotonRounded(
-                                texto: 'Anterior',
-                                color: Colors.grey.shade500,
-                                onTap: anteriorPregunta,
-                              ),
-                            _BotonRounded(
-                              texto: preguntaActual == preguntas.length - 1
-                                  ? 'Finalizar'
-                                  : 'Siguiente',
-                              color: azulAcento,
-                              enabled: respuestaSeleccionada.isNotEmpty,
-                              onTap: siguientePregunta,
-                            ),
-                          ],
-                        )
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+              child: _buildQuestionCard(pregunta, respuestaSeleccionada, progreso),
             ),
           ),
         ],
       ),
     );
   }
-}
 
-// BOTÓN ANIMADO
-class _BotonRounded extends StatefulWidget {
-  final String texto;
-  final Color color;
-  final VoidCallback onTap;
-  final bool enabled;
-  const _BotonRounded(
-      {required this.texto,
-      required this.color,
-      required this.onTap,
-      this.enabled = true});
-
-  @override
-  State<_BotonRounded> createState() => _BotonRoundedState();
-}
-
-class _BotonRoundedState extends State<_BotonRounded>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 90),
-        lowerBound: 0.0,
-        upperBound: 0.05);
+  Widget _buildQuestionCard(String pregunta, String respuestaSeleccionada, double progreso) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 580),
+      padding: const EdgeInsets.all(28),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: const Color(0xFF93C5FD).withOpacity(0.35),
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF60A5FA).withOpacity(0.10),
+            blurRadius: 40,
+            offset: const Offset(0, 20),
+            spreadRadius: 0,
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (_) => const EstudianteHome()),
+                    );
+                  },
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF93C5FD), Color(0xFF60A5FA)],
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF60A5FA).withOpacity(0.25),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(child: _buildProgressBar(progreso)),
+            ],
+          ),
+          const SizedBox(height: 24),
+          _buildQuestionText(pregunta),
+          const SizedBox(height: 24),
+          ...opciones.entries.map((opcion) {
+            return _buildOptionButton(
+              opcion.key,
+              opcion.value,
+              respuestaSeleccionada == opcion.key,
+            );
+          }).toList(),
+          const SizedBox(height: 28),
+          _buildNavigationButtons(respuestaSeleccionada),
+        ],
+      ),
+    );
   }
 
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scale = 1 - _ctrl.value;
-    return GestureDetector(
-      onTapDown: (_) => _ctrl.forward(),
-      onTapUp: (_) => _ctrl.reverse(),
-      onTapCancel: () => _ctrl.reverse(),
-      onTap: widget.enabled ? widget.onTap : null,
-      child: Transform.scale(
-        scale: scale,
-        child: Opacity(
-          opacity: widget.enabled ? 1 : 0.45,
-          child: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 26, vertical: 12),
-            decoration: BoxDecoration(
-              color: widget.color,
-              borderRadius: BorderRadius.circular(30),
+  Widget _buildProgressBar(double progreso) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Pregunta ${preguntaActual + 1}/${preguntas.length}',
+              style: const TextStyle(
+                color: Color(0xFF60A5FA),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.3,
+              ),
             ),
-            child: Text(widget.texto,
-                style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.bold)),
+            Text(
+              '${(progreso * 100).toStringAsFixed(0)}%',
+              style: const TextStyle(
+                color: Color(0xFF60A5FA),
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: TweenAnimationBuilder<double>(
+            duration: const Duration(milliseconds: 600),
+            curve: Curves.easeOutCubic,
+            tween: Tween(begin: 0.0, end: progreso.clamp(0.0, 1.0)),
+            builder: (context, value, _) {
+              return Stack(
+                children: [
+                  Container(
+                    height: 9,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDEEAFE),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  FractionallySizedBox(
+                    widthFactor: value,
+                    child: Container(
+                      height: 9,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF93C5FD), Color(0xFF60A5FA)],
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF60A5FA).withOpacity(0.35),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQuestionText(String pregunta) {
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFFF0F6FF),
+            const Color(0xFFE0EFFE).withOpacity(0.7),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFF93C5FD).withOpacity(0.25),
+          width: 1.5,
+        ),
+      ),
+      child: Text(
+        pregunta,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontSize: 17,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF1E3A8A),
+          height: 1.5,
+          letterSpacing: 0.3,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOptionButton(String key, String value, bool isSelected) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 11),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            setState(() {
+              respuestas['pregunta_$preguntaActual'] = key;
+            });
+            _guardarProgreso();
+          },
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: isSelected
+                  ? const LinearGradient(
+                      colors: [Color(0xFF93C5FD), Color(0xFF60A5FA)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    )
+                  : LinearGradient(
+                      colors: [
+                        Colors.white.withOpacity(0.9),
+                        const Color(0xFFF0F6FF).withOpacity(0.7),
+                      ],
+                    ),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: isSelected
+                    ? const Color(0xFF60A5FA)
+                    : const Color(0xFFDEEAFE).withOpacity(0.8),
+                width: isSelected ? 2 : 1.5,
+              ),
+              boxShadow: [
+                if (isSelected)
+                  BoxShadow(
+                    color: const Color(0xFF60A5FA).withOpacity(0.25),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
+                  ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? Colors.white
+                        : const Color(0xFF93C5FD).withOpacity(0.20),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      if (isSelected)
+                        BoxShadow(
+                          color: Colors.white.withOpacity(0.5),
+                          blurRadius: 8,
+                          spreadRadius: 2,
+                        ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Text(
+                      key,
+                      style: TextStyle(
+                        color: isSelected
+                            ? const Color(0xFF60A5FA)
+                            : const Color(0xFF1E3A8A),
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    value,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : const Color(0xFF1E3A8A),
+                      fontSize: 15,
+                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ),
+                if (isSelected)
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.3),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.check_rounded,
+                      color: Colors.white,
+                      size: 17,
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
-}
 
-// FONDO ANIMADO (ondas + íconos)
-class _AnimatedBackground extends StatefulWidget {
-  const _AnimatedBackground();
-
-  @override
-  State<_AnimatedBackground> createState() => _AnimatedBackgroundState();
-}
-
-class _AnimatedBackgroundState extends State<_AnimatedBackground>
-    with TickerProviderStateMixin {
-  late final AnimationController _ctrlOndas =
-      AnimationController(vsync: this, duration: const Duration(seconds: 12))
-        ..repeat(reverse: true);
-  late final Animation<double> _shift =
-      Tween<double>(begin: -40, end: 40).animate(
-          CurvedAnimation(parent: _ctrlOndas, curve: Curves.easeInOut));
-
-  @override
-  void dispose() {
-    _ctrlOndas.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ctrlOndas,
-      builder: (_, __) => Stack(
-        children: [
-          Positioned.fill(
-            child: CustomPaint(
-              painter:
-                  _WavePainter(offset: _shift.value, color: Colors.white24),
+  Widget _buildNavigationButtons(String respuestaSeleccionada) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        if (preguntaActual > 0)
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _buildNavButton(
+                label: 'Anterior',
+                icon: Icons.arrow_back_rounded,
+                onPressed: anteriorPregunta,
+                isPrimary: false,
+              ),
             ),
           ),
-          Positioned.fill(
-            top: 60,
-            child: CustomPaint(
-              painter: _WavePainter(
-                  offset: _shift.value * .6, color: Colors.white30),
+        Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(left: preguntaActual > 0 ? 8 : 0),
+            child: _buildNavButton(
+              label: preguntaActual == preguntas.length - 1 ? 'Finalizar' : 'Siguiente',
+              icon: preguntaActual == preguntas.length - 1
+                  ? Icons.check_circle_outline_rounded
+                  : Icons.arrow_forward_rounded,
+              onPressed: respuestaSeleccionada.isNotEmpty ? siguientePregunta : null,
+              isPrimary: true,
+              iconAtEnd: true,
             ),
           ),
-          const _IconFloat(top: 100, left: 40, icon: Icons.menu_book),
-          const _IconFloat(bottom: 120, right: 60, icon: Icons.computer),
-          const _IconFloat(top: 220, right: 20, icon: Icons.school),
-          const _IconFloat(bottom: 40, left: 30, icon: Icons.pedal_bike),
-        ],
-      ),
+        ),
+      ],
     );
   }
-}
 
-class _IconFloat extends StatelessWidget {
-  final double? top, left, right, bottom;
-  final IconData icon;
-  const _IconFloat(
-      {this.top, this.left, this.right, this.bottom, required this.icon});
-  @override
-  Widget build(BuildContext context) {
-    return Positioned(
-      top: top,
-      left: left,
-      right: right,
-      bottom: bottom,
-      child: Icon(icon, size: 48, color: Colors.white.withOpacity(0.08)),
-    );
-  }
-}
+  Widget _buildNavButton({
+    required String label,
+    required IconData icon,
+    required VoidCallback? onPressed,
+    required bool isPrimary,
+    bool iconAtEnd = false,
+  }) {
+    final isEnabled = onPressed != null;
 
-// ---------- OVERLAY DEGRADADO (sutil animación de opacidad)
-class _GradientOverlay extends StatefulWidget {
-  const _GradientOverlay();
-  @override
-  State<_GradientOverlay> createState() => _GradientOverlayState();
-}
-
-class _GradientOverlayState extends State<_GradientOverlay>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl =
-      AnimationController(vsync: this, duration: const Duration(seconds: 8))
-        ..repeat(reverse: true);
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (_, __) => Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.white.withOpacity(0.05 + 0.1 * _ctrl.value),
-              Colors.white.withOpacity(0.12 + 0.05 * _ctrl.value),
-              Colors.transparent,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(15),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 15),
+          decoration: BoxDecoration(
+            gradient: isPrimary && isEnabled
+                ? const LinearGradient(colors: [Color(0xFF93C5FD), Color(0xFF60A5FA)])
+                : null,
+            color: !isPrimary
+                ? const Color(0xFFE5E7EB).withOpacity(0.8)
+                : isEnabled
+                    ? null
+                    : const Color(0xFFDEEAFE).withOpacity(0.5),
+            borderRadius: BorderRadius.circular(15),
+            boxShadow: [
+              if (isPrimary && isEnabled)
+                BoxShadow(
+                  color: const Color(0xFF60A5FA).withOpacity(0.30),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (!iconAtEnd) ...[
+                Icon(
+                  icon,
+                  color: isPrimary
+                      ? (isEnabled ? Colors.white : Colors.grey.shade400)
+                      : const Color(0xFF1E3A8A),
+                  size: 19,
+                ),
+                const SizedBox(width: 8),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  color: isPrimary
+                      ? (isEnabled ? Colors.white : Colors.grey.shade400)
+                      : const Color(0xFF1E3A8A),
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              if (iconAtEnd) ...[
+                const SizedBox(width: 8),
+                Icon(
+                  icon,
+                  color: isPrimary
+                      ? (isEnabled ? Colors.white : Colors.grey.shade400)
+                      : const Color(0xFF1E3A8A),
+                  size: 19,
+                ),
+              ],
             ],
           ),
         ),
       ),
     );
   }
+
+  Widget _buildModernDialog() {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 400),
+        padding: const EdgeInsets.all(28),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Colors.white, Color(0xFFF0F6FF)],
+          ),
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(
+            color: const Color(0xFF93C5FD).withOpacity(0.35),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF60A5FA).withOpacity(0.20),
+              blurRadius: 32,
+              offset: const Offset(0, 16),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF93C5FD), Color(0xFF60A5FA)],
+                ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF60A5FA).withOpacity(0.30),
+                    blurRadius: 16,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.send_rounded, color: Colors.white, size: 30),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              '¿Enviar respuestas?',
+              style: TextStyle(
+                fontSize: 21,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1E3A8A),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Una vez enviadas no podrás modificarlas. ¿Estás seguro?',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 15, color: Colors.grey.shade700, height: 1.5),
+            ),
+            const SizedBox(height: 26),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildDialogButton(
+                    label: 'Cancelar',
+                    onPressed: () => Navigator.of(context).pop(),
+                    isPrimary: false,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildDialogButton(
+                    label: 'Enviar',
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      enviarTest();
+                    },
+                    isPrimary: true,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDialogButton({
+    required String label,
+    required VoidCallback onPressed,
+    required bool isPrimary,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            gradient: isPrimary
+                ? const LinearGradient(colors: [Color(0xFF93C5FD), Color(0xFF60A5FA)])
+                : null,
+            color: !isPrimary ? const Color(0xFFE5E7EB).withOpacity(0.8) : null,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              if (isPrimary)
+                BoxShadow(
+                  color: const Color(0xFF60A5FA).withOpacity(0.30),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+            ],
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: isPrimary ? Colors.white : const Color(0xFF1E3A8A),
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-// PINTOR DE ONDAS
-class _WavePainter extends CustomPainter {
-  final double offset;
-  final Color color;
-  _WavePainter({required this.offset, required this.color});
+// FONDO ACADÉMICO
+class _AcademicBackground extends StatefulWidget {
+  const _AcademicBackground();
+
   @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color;
-    final path = Path()
-      ..moveTo(0, size.height * 0.7 + offset)
-      ..quadraticBezierTo(size.width * 0.25, size.height * 0.6 + offset,
-          size.width * 0.5, size.height * 0.7 + offset)
-      ..quadraticBezierTo(size.width * 0.75, size.height * 0.8 + offset,
-          size.width, size.height * 0.7 + offset)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-    canvas.drawPath(path, paint);
+  State<_AcademicBackground> createState() => _AcademicBackgroundState();
+}
+
+class _AcademicBackgroundState extends State<_AcademicBackground>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(seconds: 30),
+      vsync: this,
+    )..repeat(reverse: true);
+    _animation = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
   }
 
   @override
-  bool shouldRepaint(covariant _WavePainter oldDelegate) =>
-      oldDelegate.offset != offset;
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, _) {
+        return Stack(
+          children: [
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment(-0.9, -1),
+                  end: Alignment(1, 1),
+                  colors: [
+                    Color(0xFFE0F2FE),
+                    Color(0xFFBAE6FD),
+                    Color(0xFF93C5FD),
+                  ],
+                ),
+              ),
+            ),
+            CustomPaint(
+              painter: _SoftOrbsPainter(_animation.value),
+              size: Size.infinite,
+            ),
+            Positioned(
+              left: -30,
+              bottom: 40,
+              child: Opacity(
+                opacity: 0.18,
+                child: CustomPaint(
+                  size: const Size(300, 380),
+                  painter: _TeacherPainter(_animation.value),
+                ),
+              ),
+            ),
+            CustomPaint(
+              painter: _AcademicObjectsPainter(_animation.value),
+              size: Size.infinite,
+            ),
+            CustomPaint(
+              painter: _MathSymbolsPainter(_animation.value),
+              size: Size.infinite,
+            ),
+            CustomPaint(
+              painter: _ShiningParticlesPainter(_animation.value),
+              size: Size.infinite,
+            ),
+            Container(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment.center,
+                  radius: 1.3,
+                  colors: [
+                    Colors.white.withOpacity(0.12),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// Painters (idénticos a test 10-11)
+class _TeacherPainter extends CustomPainter {
+  final double t;
+  _TeacherPainter(this.t);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..style = PaintingStyle.fill;
+    final offsetY = 10 * math.sin(t * 2 * math.pi);
+    canvas.translate(0, offsetY);
+
+    paint.color = Colors.white;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(size.width * 0.30, size.height * 0.50, size.width * 0.40, size.height * 0.25),
+        const Radius.circular(12),
+      ),
+      paint,
+    );
+
+    paint.color = const Color(0xFF60A5FA);
+    final tiePath = Path()
+      ..moveTo(size.width * 0.50, size.height * 0.48)
+      ..lineTo(size.width * 0.46, size.height * 0.72)
+      ..lineTo(size.width * 0.50, size.height * 0.68)
+      ..lineTo(size.width * 0.54, size.height * 0.72)
+      ..close();
+    canvas.drawPath(tiePath, paint);
+
+    paint.color = const Color(0xFFFDB074);
+    canvas.drawCircle(Offset(size.width * 0.22, size.height * 0.60), 22, paint);
+    canvas.drawCircle(Offset(size.width * 0.78, size.height * 0.60), 22, paint);
+    canvas.drawCircle(Offset(size.width * 0.50, size.height * 0.38), 48, paint);
+
+    paint.color = const Color(0xFFD97706);
+    canvas.drawCircle(Offset(size.width * 0.42, size.height * 0.30), 30, paint);
+    canvas.drawCircle(Offset(size.width * 0.58, size.height * 0.30), 30, paint);
+
+    paint.color = Colors.black;
+    canvas.drawCircle(Offset(size.width * 0.44, size.height * 0.38), 4, paint);
+    canvas.drawCircle(Offset(size.width * 0.56, size.height * 0.38), 4, paint);
+
+    paint.style = PaintingStyle.stroke;
+    paint.strokeWidth = 2.5;
+    final smilePath = Path()
+      ..moveTo(size.width * 0.40, size.height * 0.44)
+      ..quadraticBezierTo(size.width * 0.50, size.height * 0.48, size.width * 0.60, size.height * 0.44);
+    canvas.drawPath(smilePath, paint);
+
+    paint.style = PaintingStyle.fill;
+    paint.color = const Color(0xFF1E3A8A);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(size.width * 0.30, size.height * 0.76, size.width * 0.40, size.height * 0.14),
+        const Radius.circular(8),
+      ),
+      paint,
+    );
+
+    paint.color = const Color(0xFF92400E);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(size.width * 0.75, size.height - 90, 50, 38),
+        const Radius.circular(6),
+      ),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_TeacherPainter oldDelegate) => oldDelegate.t != t;
+}
+
+class _SoftOrbsPainter extends CustomPainter {
+  final double t;
+  _SoftOrbsPainter(this.t);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    void drawOrb(Offset center, double radius, Color color, double dx, double dy) {
+      final paint = Paint()
+        ..shader = RadialGradient(
+          colors: [
+            color.withOpacity(0.22),
+            color.withOpacity(0.08),
+            Colors.transparent,
+          ],
+        ).createShader(Rect.fromCircle(center: center, radius: radius))
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 50);
+
+      final animatedCenter = Offset(
+        center.dx + dx * math.sin(t * 2 * math.pi),
+        center.dy + dy * math.cos(t * 2 * math.pi),
+      );
+
+      canvas.drawCircle(animatedCenter, radius, paint);
+    }
+
+    drawOrb(Offset(size.width * 0.25, size.height * 0.25), size.width * 0.30,
+        const Color(0xFF93C5FD), 25, 20);
+    drawOrb(Offset(size.width * 0.75, size.height * 0.22), size.width * 0.35,
+        const Color(0xFF60A5FA), -20, 25);
+    drawOrb(Offset(size.width * 0.50, size.height * 0.75), size.width * 0.38,
+        const Color(0xFF7DD3FC), 18, -18);
+  }
+
+  @override
+  bool shouldRepaint(_SoftOrbsPainter oldDelegate) => oldDelegate.t != t;
+}
+
+class _AcademicObjectsPainter extends CustomPainter {
+  final double t;
+  _AcademicObjectsPainter(this.t);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..style = PaintingStyle.fill;
+
+    _drawBook(canvas, paint,
+        Offset(size.width * 0.12 + 12 * math.sin(t * 2 * math.pi),
+            size.height * 0.20 + 10 * math.cos(t * 2 * math.pi)),
+        0.15 + 0.08 * math.sin(t * 2 * math.pi), const Color(0xFF60A5FA));
+
+    _drawBook(canvas, paint,
+        Offset(size.width * 0.85 + 10 * math.cos((t + 0.3) * 2 * math.pi),
+            size.height * 0.28 + 12 * math.sin((t + 0.3) * 2 * math.pi)),
+        -0.12 + 0.08 * math.cos(t * 2 * math.pi), const Color(0xFF93C5FD));
+
+    _drawGlobe(canvas, paint,
+        Offset(size.width * 0.88 + 11 * math.cos(t * 2 * math.pi),
+            size.height * 0.18 + 13 * math.sin(t * 2 * math.pi)));
+
+    _drawCalculator(canvas, paint,
+        Offset(size.width * 0.82 + 10 * math.sin((t + 0.2) * 2 * math.pi),
+            size.height * 0.70 + 8 * math.cos((t + 0.2) * 2 * math.pi)));
+
+    _drawDiploma(canvas, paint,
+        Offset(size.width * 0.50 + 7 * math.sin((t + 0.8) * 2 * math.pi),
+            size.height * 0.12 + 9 * math.cos((t + 0.8) * 2 * math.pi)),
+        -0.10 + 0.08 * math.cos(t * 2 * math.pi));
+  }
+
+  void _drawBook(Canvas canvas, Paint paint, Offset pos, double rotation, Color color) {
+    canvas.save();
+    canvas.translate(pos.dx, pos.dy);
+    canvas.rotate(rotation);
+    paint.color = color.withOpacity(0.25);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(const Rect.fromLTWH(-20, -28, 40, 56), const Radius.circular(4)),
+      paint,
+    );
+    paint.color = Colors.white.withOpacity(0.2);
+    canvas.drawRect(const Rect.fromLTWH(-15, -23, 30, 6), paint);
+    canvas.restore();
+  }
+
+  void _drawGlobe(Canvas canvas, Paint paint, Offset pos) {
+    canvas.save();
+    canvas.translate(pos.dx, pos.dy);
+    paint.color = const Color(0xFF60A5FA).withOpacity(0.20);
+    canvas.drawCircle(Offset.zero, 28, paint);
+    paint.style = PaintingStyle.stroke;
+    paint.strokeWidth = 2;
+    paint.color = const Color(0xFF93C5FD).withOpacity(0.35);
+    canvas.drawCircle(Offset.zero, 28, paint);
+    canvas.drawLine(const Offset(-28, 0), const Offset(28, 0), paint);
+    canvas.drawLine(const Offset(0, -28), const Offset(0, 28), paint);
+    paint.style = PaintingStyle.fill;
+    canvas.restore();
+  }
+
+  void _drawCalculator(Canvas canvas, Paint paint, Offset pos) {
+    canvas.save();
+    canvas.translate(pos.dx, pos.dy);
+    paint.color = const Color(0xFF93C5FD).withOpacity(0.25);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(const Rect.fromLTWH(-17, -25, 34, 50), const Radius.circular(5)),
+      paint,
+    );
+    paint.color = const Color(0xFF60A5FA).withOpacity(0.30);
+    canvas.drawRect(const Rect.fromLTWH(-12, -20, 24, 12), paint);
+    for (int i = 0; i < 3; i++) {
+      for (int j = 0; j < 3; j++) {
+        canvas.drawCircle(Offset(-7 + j * 7.0, -2 + i * 7.0), 2, paint);
+      }
+    }
+    canvas.restore();
+  }
+
+  void _drawDiploma(Canvas canvas, Paint paint, Offset pos, double rotation) {
+    canvas.save();
+    canvas.translate(pos.dx, pos.dy);
+    canvas.rotate(rotation);
+    paint.color = const Color(0xFF93C5FD).withOpacity(0.20);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(const Rect.fromLTWH(-25, -17, 50, 34), const Radius.circular(3)),
+      paint,
+    );
+    paint.style = PaintingStyle.stroke;
+    paint.strokeWidth = 1.5;
+    paint.color = const Color(0xFF60A5FA).withOpacity(0.30);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(const Rect.fromLTWH(-22, -14, 44, 28), const Radius.circular(2)),
+      paint,
+    );
+    paint.style = PaintingStyle.fill;
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_AcademicObjectsPainter oldDelegate) => oldDelegate.t != t;
+}
+
+class _MathSymbolsPainter extends CustomPainter {
+  final double t;
+  _MathSymbolsPainter(this.t);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    _drawMathSymbol(canvas, '+',
+        Offset(size.width * 0.22, size.height * 0.15 + 10 * math.sin((t + 0.1) * 2 * math.pi)));
+    _drawMathSymbol(canvas, '×',
+        Offset(size.width * 0.78, size.height * 0.35 + 12 * math.cos((t + 0.3) * 2 * math.pi)));
+    _drawMathSymbol(canvas, '÷',
+        Offset(size.width * 0.15, size.height * 0.82 + 8 * math.sin((t + 0.6) * 2 * math.pi)));
+    _drawMathSymbol(canvas, '=',
+        Offset(size.width * 0.85, size.height * 0.82 + 10 * math.cos((t + 0.8) * 2 * math.pi)));
+  }
+
+  void _drawMathSymbol(Canvas canvas, String symbol, Offset pos) {
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: symbol,
+        style: TextStyle(
+          fontSize: 32,
+          fontWeight: FontWeight.bold,
+          color: const Color(0xFF93C5FD).withOpacity(0.25),
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(canvas, Offset(pos.dx - textPainter.width / 2, pos.dy - textPainter.height / 2));
+  }
+
+  @override
+  bool shouldRepaint(_MathSymbolsPainter oldDelegate) => oldDelegate.t != t;
+}
+
+class _ShiningParticlesPainter extends CustomPainter {
+  final double t;
+  _ShiningParticlesPainter(this.t);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final random = math.Random(789);
+    final paint = Paint();
+    for (int i = 0; i < 80; i++) {
+      final x = random.nextDouble() * size.width;
+      final y = random.nextDouble() * size.height;
+      final phase = i * 0.15 + t * 2 * math.pi;
+      final opacity = 0.10 + 0.20 * math.sin(phase);
+      final radius = 0.8 + 1.4 * math.cos(phase);
+      paint.color = Colors.white.withOpacity(opacity);
+      canvas.drawCircle(Offset(x, y), radius, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ShiningParticlesPainter oldDelegate) => oldDelegate.t != t;
 }

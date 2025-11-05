@@ -3,6 +3,7 @@ import 'dart:ui' show ImageFilter;              // blur para botón glass
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math' as math;
+import 'package:url_launcher/url_launcher.dart';
 
 // >>> NUEVO: importa la pantalla explicativa (misma carpeta /screens)
 import 'como_calificar_screen.dart';
@@ -162,6 +163,56 @@ class _EstudianteHomeState extends State<EstudianteHome>
 
                   _InfoCards(wide: wide),
 
+                  const SizedBox(height: 18),
+
+                  // ===== NUEVA SECCIÓN: Link al formulario (ahora botón) =====
+                  const _SectionTitle(
+                    title: 'Formulario externo',
+                    subtitle: 'Completa la encuesta en el siguiente enlace',
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(18),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black12,
+                            blurRadius: 12,
+                            offset: Offset(0, 6),
+                          )
+                        ],
+                      ),
+                      child: Center(
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.open_in_new),
+                          label: const Text('Abrir formulario'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _blue,
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: () async {
+                            final uri = Uri.parse(
+                              'https://docs.google.com/forms/d/e/1FAIpQLSflLrBHkGVAe0r9RPHOi7l5TdSIsB-ufRaDiwy7n7I274f_1w/viewform?usp=header',
+                            );
+                            final ok = await launchUrl(
+                              uri,
+                              mode: LaunchMode.externalApplication,
+                            );
+                            if (!ok && mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('No se pudo abrir el formulario.')),
+                              );
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                  // ===== FIN NUEVA SECCIÓN =====
+
                   const SizedBox(height: 24),
                 ],
               ),
@@ -301,17 +352,17 @@ class _InfoCards extends StatelessWidget {
   final bool wide;
 
   @override
-    Widget build(BuildContext context) {
-          final items = <_CardData>[
-    const _CardData(Icons.question_answer, '¿Qué es un Test Vocacional?',
-        'Herramienta para descubrir tus intereses, fortalezas y preferencias y orientar tu futuro académico.'),
-    const _CardData(Icons.settings_suggest_rounded, 'Metodología RIASEC',
-        'Modelo RIASEC: Realista, Investigativa, Artística, Social, Emprendedora y Convencional.'),
-    const _CardData(Icons.compare_arrows_rounded, '¿Cómo funciona?',
-        'Respondes las preguntas. Analizamos tus respuestas y te recomendamos una modalidad.'),
-    const _CardData(Icons.emoji_events, 'Beneficios',
-        '• Identificas tus gustos\n• Tomas decisiones seguras\n• Recibes orientación\n• Evitas equivocaciones'),
-  ];
+  Widget build(BuildContext context) {
+    final items = <_CardData>[
+      const _CardData(Icons.question_answer, '¿Qué es un Test Vocacional?',
+          'Herramienta para descubrir tus intereses, fortalezas y preferencias y orientar tu futuro académico.'),
+      const _CardData(Icons.settings_suggest_rounded, 'Metodología RIASEC',
+          'Modelo RIASEC: Realista, Investigativa, Artística, Social, Emprendedora y Convencional.'),
+      const _CardData(Icons.compare_arrows_rounded, '¿Cómo funciona?',
+          'Responde las 60 preguntas. Analizamos tus respuestas y te recomendamos una modalidad.'),
+      const _CardData(Icons.emoji_events, 'Beneficios',
+          '• Identificas tus gustos\n• Tomas decisiones seguras\n• Recibes orientación\n• Evitas equivocaciones'),
+    ];
 
     final cross = wide ? 2 : 1;
     const cardHeight = 150.0; // altura fija para filas compactas y sin huecos
@@ -380,7 +431,7 @@ class _CardData {
 // ============================================================
 //      FANCY PRIMARY BUTTON (gradiente animado azul-turquesa)
 // ============================================================
-  class FancyPrimaryButton extends StatefulWidget {
+class FancyPrimaryButton extends StatefulWidget {
   const FancyPrimaryButton({super.key, required this.text, required this.onTap});
   final String text;
   final VoidCallback onTap;
@@ -521,7 +572,6 @@ class _FancyPrimaryButtonState extends State<FancyPrimaryButton>
     );
   }
 }
-
 
 // ============================================================
 //          TINY GLASS BUTTON (vidrio azulado, ícono oscuro)
