@@ -135,9 +135,9 @@
                                                     Expanded(child: _OptionTile(
                                                     color: Color(0xFF3FA9F5),
                                                     emoji: '❤️',
-                                                    title: 'ME ENCANTA',
+                                                    title: 'ME GUSTA',
                                                     line: 'Lo disfruto muchísimo y me hace feliz.',
-                                                    example: 'Me ENCANTA ayudar a mis amigos con proyectos creativos.',
+                                                    example: 'Me GUSTA ayudar a mis amigos con proyectos creativos.',
                                                     )),
                                                     SizedBox(width: 16),
                                                     Expanded(child: _OptionTile(
