@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math' as math;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/foundation.dart' show kIsWeb; // <-- agregado para Web
 
 // >>> NUEVO: importa la pantalla explicativa (misma carpeta /screens)
 import 'como_calificar_screen.dart';
@@ -197,10 +198,19 @@ class _EstudianteHomeState extends State<EstudianteHome>
                             final uri = Uri.parse(
                               'https://docs.google.com/forms/d/e/1FAIpQLSflLrBHkGVAe0r9RPHOi7l5TdSIsB-ufRaDiwy7n7I274f_1w/viewform?usp=header',
                             );
-                            final ok = await launchUrl(
-                              uri,
-                              mode: LaunchMode.externalApplication,
-                            );
+
+                            bool ok;
+                            if (kIsWeb) {
+                              // En Web abrir en nueva pestaña/ventana
+                              ok = await launchUrl(uri, webOnlyWindowName: '_blank');
+                            } else {
+                              // En móviles/desktop usar aplicación externa
+                              ok = await launchUrl(
+                                uri,
+                                mode: LaunchMode.externalApplication,
+                              );
+                            }
+
                             if (!ok && mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(content: Text('No se pudo abrir el formulario.')),
