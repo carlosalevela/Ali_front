@@ -1,14 +1,13 @@
-import 'dart:convert'; // <- necesario para decodificar JSON si viene crudo
-import 'dart:math' as math;
-import 'dart:typed_data';
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle; // <-- para cargar fuentes TTF
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:pdf/widgets.dart' as pw;         // PDF
-import 'package:pdf/pdf.dart' as pdf;            // PDF colors
-import 'package:printing/printing.dart';         // PDF share/print
+import 'package:pdf/widgets.dart' as pw;
+import 'package:pdf/pdf.dart' as pdf;
+import 'package:printing/printing.dart';
+
 import 'estudiante_home.dart';
 
 /// ===================== PALETA / CONSTANTES =====================
@@ -47,7 +46,6 @@ class ResultadoTest9Screen extends StatefulWidget {
 
 class _ResultadoTest9ScreenState extends State<ResultadoTest9Screen>
     with TickerProviderStateMixin {
-
   // Animación hero
   late final AnimationController _bounceCtl =
       AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..forward();
@@ -126,7 +124,7 @@ class _ResultadoTest9ScreenState extends State<ResultadoTest9Screen>
   // ---------- Extra: util para PDF ----------
   String _plainFromMarkdown(String md) {
     return md
-        .replaceAll(RegExp(r'\*\*([^*]+)\*\*'), r'$1')
+        .replaceAll(RegExp(r'\*\*([^\*]+)\*\*'), r'$1')
         .replaceAll(RegExp(r'_([^_]+)_'), r'$1')
         .replaceAll(RegExp(r'#+\s*'), '')
         .replaceAll(RegExp(r'\n{3,}'), '\n\n')
@@ -143,7 +141,7 @@ class _ResultadoTest9ScreenState extends State<ResultadoTest9Screen>
     final out = <MapEntry<String, String>>[];
     for (final p in parts.take(3)) {
       final t = p.trim();
-      final name = t.replaceAll(RegExp(r'\([^)]*\)'), '').trim();
+      final name = t.replaceAll(RegExp(r'\([^\)]*\)'), '').trim();
       final score = RegExp(r'\(([^)]*)\)').firstMatch(t)?.group(1) ?? '';
       if (name.isNotEmpty) out.add(MapEntry(name, score));
     }
@@ -269,7 +267,7 @@ class _ResultadoTest9ScreenState extends State<ResultadoTest9Screen>
                             listBullet: const TextStyle(color: _ink),
                             blockquote: const TextStyle(color: _ink),
                             blockquoteDecoration: BoxDecoration(
-                              border: Border(left: BorderSide(color: _brand.withOpacity(.6), width: 3)),
+                              border: Border(left: BorderSide(color: _brand, width: 3)),
                             ),
                             a: const TextStyle(color: _brand, decoration: TextDecoration.underline),
                             code: const TextStyle(
@@ -287,94 +285,117 @@ class _ResultadoTest9ScreenState extends State<ResultadoTest9Screen>
               ),
             ),
 
-            // ============ BLOQUE AZUL: CARDS PEQUEÑAS ============
+            // ============ BLOQUE DECORADO: CARDS PEQUEÑAS ============ 
             SliverToBoxAdapter(
-              child: Container(
-                color: _lightBlue,
-                child: _PageWrap(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: LayoutBuilder(
-                      builder: (ctx, cts) {
-                        final cols = cts.maxWidth >= 980 ? 3 : (cts.maxWidth >= 640 ? 2 : 1);
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _SectionHeader(
-                              title: 'Acciones recomendadas',
-                              subtitle: 'Sigue explorando y comparte tu resultado',
-                              onLightBlue: true,
-                            ),
-                            const SizedBox(height: 16),
-                            GridView.count(
-                              crossAxisCount: cols,
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              mainAxisSpacing: 14,
-                              crossAxisSpacing: 14,
-                              // tamaño compacto homogéneo
-                              childAspectRatio: 1.6,
-                              children: [
-                                // 1) Agendar
-                                _ServiceCard(
-                                  icon: FontAwesomeIcons.calendarCheck,
-                                  title: 'Agendar asesoría',
-                                  desc: 'Reserva una charla rápida para resolver dudas del técnico.',
-                                  cta: 'Agendar →',
-                                  onTap: _openContact,
-                                ),
+              child: _DecorBand(
+                child: LayoutBuilder(
+                  builder: (ctx, cts) {
+                    // Tamaño MEDIANO uniforme de tiles
+                    const gap = 14.0;
+                    final maxW = cts.maxWidth;
+                    // Breakpoints
+                    final cols = maxW >= 900 ? 3 : (maxW >= 620 ? 2 : 1);
+                    final tileW = cols == 3
+                        ? (maxW - gap * 2) / 3
+                        : (cols == 2 ? (maxW - gap) / 2 : maxW);
+                    final tileH = maxW >= 900 ? 192.0 : (maxW >= 620 ? 204.0 : 216.0);
 
-                                // 2) Estadísticas (card)
-                                _SurfaceCard(
-                                  child: ConstrainedBox(
-                                    constraints: const BoxConstraints(minHeight: 140),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: const [
-                                            Icon(Icons.insights, color: _brand, size: 20),
-                                            SizedBox(width: 8),
-                                            Text('Estadísticas del test',
-                                                style: TextStyle(
-                                                  fontWeight: FontWeight.w800,
-                                                  color: _ink,
-                                                )),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 6),
-                                        const Text('Resumen de tus preferencias',
-                                            style: TextStyle(color: _muted)),
-                                        const SizedBox(height: 8),
-                                        Transform.scale(
-                                          scale: 0.86,
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const _SectionHeader(
+                          title: 'Acciones recomendadas',
+                          subtitle: 'Sigue explorando y comparte tu resultado',
+                          onLightBlue: true,
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Wrap centrado
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: gap,
+                          runSpacing: gap,
+                          children: [
+                            _ActionTile(
+                              width: tileW, height: tileH,
+                              child: _ServiceCard(
+                                icon: FontAwesomeIcons.calendarCheck,
+                                title: 'Agendar asesoría',
+                                desc: 'Reserva una charla rápida para resolver dudas del técnico.',
+                                cta: 'Agendar →',
+                                onTap: _openContact,
+                              ),
+                            ),
+
+                            _ActionTile(
+                              width: tileW, height: tileH,
+                              child: _SurfaceCard(
+                                child: SizedBox.expand(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Row(
+                                        children: [
+                                          Icon(Icons.insights, color: _brand, size: 20),
+                                          SizedBox(width: 8),
+                                          Flexible(
+                                            child: Text(
+                                              'Estadísticas del test',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                                color: _ink,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      const Text(
+                                        'Resumen de tus preferencias',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(color: _muted),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      // Círculos compactos
+                                      Expanded(
+                                        child: Align(
                                           alignment: Alignment.topLeft,
-                                          child: _StatsGrid(pct: {
-                                            'Me gusta'   : (widget.porcentajes['Me gusta'] ?? 0),
-                                            'Me interesa': (widget.porcentajes['Me interesa'] ?? 0),
-                                            'No me gusta': (widget.porcentajes['No me gusta'] ?? 0),
-                                          }),
+                                          child: Transform.scale(
+                                            scale: 0.84,
+                                            alignment: Alignment.topLeft,
+                                            child: _StatsGrid(pct: {
+                                              'Me gusta'   : (widget.porcentajes['Me gusta'] ?? 0),
+                                              'Me interesa': (widget.porcentajes['Me interesa'] ?? 0),
+                                              'No me gusta': (widget.porcentajes['No me gusta'] ?? 0),
+                                            }),
+                                          ),
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                    ],
                                   ),
                                 ),
+                              ),
+                            ),
 
-                                // 3) Áreas recomendadas (Top 3)
-                                _ServiceCard(
-                                  icon: FontAwesomeIcons.magnifyingGlass,
-                                  title: 'Áreas que también te pueden gustar',
-                                  desc: 'Este es el top 3 de especialidades donde también mostraste interés.',
-                                  cta: 'Ver top 3 →',
-                                  onTap: () => _showTop3(context, top3),
-                                ),
-                              ],
+                            // Esta queda al centro automáticamente
+                            _ActionTile(
+                              width: tileW, height: tileH,
+                              child: _ServiceCard(
+                                icon: FontAwesomeIcons.magnifyingGlass,
+                                title: 'Áreas que también te pueden gustar',
+                                desc: 'Este es el top 3 de especialidades donde también mostraste interés.',
+                                cta: 'Ver top 3 →',
+                                onTap: () => _showTop3(context, top3),
+                              ),
                             ),
                           ],
-                        );
-                      },
-                    ),
-                  ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
@@ -425,17 +446,15 @@ class _ResultadoTest9ScreenState extends State<ResultadoTest9Screen>
                 style: Theme.of(context).textTheme.titleMedium!
                     .copyWith(fontWeight: FontWeight.w700, color: _ink)),
             const SizedBox(height: 10),
-            ListTile(
-              leading: const Icon(Icons.mail_outline, color: _brand),
-              title: const Text('Escríbenos por correo'),
-              subtitle: const Text('soporte@ali-orientadora.edu.co'),
-              onTap: () => Navigator.pop(context),
+            const ListTile(
+              leading: Icon(Icons.mail_outline, color: _brand),
+              title: Text('Escríbenos por correo'),
+              subtitle: Text('soporte@ali-orientadora.edu.co'),
             ),
-            ListTile(
-              leading: const Icon(Icons.chat_bubble_outline, color: _brand),
-              title: const Text('Chat institucional'),
-              subtitle: const Text('Lunes a viernes, 8:00–17:00'),
-              onTap: () => Navigator.pop(context),
+            const ListTile(
+              leading: Icon(Icons.chat_bubble_outline, color: _brand),
+              title: Text('Chat institucional'),
+              subtitle: Text('Lunes a viernes, 8:00–17:00'),
             ),
           ],
         ),
@@ -455,7 +474,7 @@ class _ResultadoTest9ScreenState extends State<ResultadoTest9Screen>
       return;
     }
 
-    // Diálogo centrado (más arriba y centrado visualmente)
+    // Diálogo centrado
     showGeneralDialog(
       context: context,
       barrierLabel: 'Top 3',
@@ -573,7 +592,7 @@ class _ResultadoTest9ScreenState extends State<ResultadoTest9Screen>
 
       pw.Widget _statRow(String k, double v) {
         final vv = v.clamp(0, 100);
-        final val = vv.toStringAsFixed(0) + '%';
+        final val = '${vv.toStringAsFixed(0)}%';
         return pw.Row(
           crossAxisAlignment: pw.CrossAxisAlignment.center,
           children: [
@@ -603,7 +622,7 @@ class _ResultadoTest9ScreenState extends State<ResultadoTest9Screen>
         );
       }
 
-      // MultiPage pagina automáticamente (evita overflow)
+      // MultiPage
       doc.addPage(
         pw.MultiPage(
           margin: const pw.EdgeInsets.fromLTRB(36, 36, 36, 48),
@@ -667,10 +686,10 @@ class _ResultadoTest9ScreenState extends State<ResultadoTest9Screen>
 
       final bytes = await doc.save();
 
-      // Descarga/compartir (todas las plataformas)
+      // Descarga/compartir
       await Printing.sharePdf(bytes: bytes, filename: 'ALI_resultado.pdf');
 
-      // Fallback (algunos navegadores)
+      // Fallback
       await Printing.layoutPdf(onLayout: (format) async => bytes);
 
       if (!mounted) return;
@@ -776,6 +795,78 @@ class _SurfaceCard extends StatelessWidget {
       );
 }
 
+/// ===== NUEVO: Tile de tamaño fijo para simetría =====
+class _ActionTile extends StatelessWidget {
+  final double width;
+  final double height;
+  final Widget child;
+  const _ActionTile({required this.width, required this.height, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      height: height,
+      child: child,
+    );
+  }
+}
+
+/// ===== NUEVO: Banda decorativa simétrica con gradiente + blobs =====
+class _DecorBand extends StatelessWidget {
+  final Widget child;
+  const _DecorBand({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        // Gradiente principal vertical
+        Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFFE9F2FF), Color(0xFFDCEBFF)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        ),
+        // Blob izquierdo (arriba)
+        Positioned(
+          top: -60, left: -40,
+          child: Container(
+            width: 220, height: 220,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFF60A5FA).withOpacity(.18),
+              boxShadow: const [BoxShadow(blurRadius: 90, spreadRadius: 40, color: Color(0x3060A5FA))],
+            ),
+          ),
+        ),
+        // Blob derecho (abajo)
+        Positioned(
+          bottom: -70, right: -50,
+          child: Container(
+            width: 260, height: 260,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFF0EA5E9).withOpacity(.16),
+              boxShadow: const [BoxShadow(blurRadius: 100, spreadRadius: 46, color: Color(0x300EA5E9))],
+            ),
+          ),
+        ),
+        // Contenido centrado
+        _PageWrap(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: child,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _SectionHeader extends StatelessWidget {
   final String title;
   final String? subtitle;
@@ -817,16 +908,32 @@ class _ServiceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return _SurfaceCard(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 140),
+        constraints: const BoxConstraints(minHeight: 120),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(icon, color: _brand, size: 22),
-            const SizedBox(height: 10),
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w800, color: _ink)),
             const SizedBox(height: 6),
-            Expanded(child: Text(desc, style: const TextStyle(color: _muted, height: 1.4))),
-            const SizedBox(height: 8),
+            const Text(
+              '',
+              style: TextStyle(height: 0), // spacer para alineación (opcional)
+            ),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w800, color: _ink),
+            ),
+            const SizedBox(height: 6),
+            Expanded(
+              child: Text(
+                desc,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: _muted, height: 1.35),
+              ),
+            ),
+            const SizedBox(height: 6),
             TextButton(
               onPressed: onTap,
               style: TextButton.styleFrom(foregroundColor: _brand, padding: EdgeInsets.zero),
@@ -869,8 +976,8 @@ class _StatsGrid extends StatelessWidget {
 
     return Wrap(
       alignment: WrapAlignment.start,
-      runSpacing: 16,
-      spacing: 16,
+      runSpacing: 12,
+      spacing: 12,
       children: col.keys.map((k) {
         return _CircleStat(
           label: k,
@@ -902,7 +1009,7 @@ class _CircleStat extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pct = (value.clamp(0, 100)) / 100;
-    const sz = 86.0;
+    const sz = 76.0; // compacto para que quepan 3
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -928,19 +1035,21 @@ class _CircleStat extends StatelessWidget {
                   width: sz, height: sz,
                   child: CircularProgressIndicator(
                     value: v,
-                    strokeWidth: 7,
+                    strokeWidth: 6,
                     backgroundColor: Colors.black12.withOpacity(.06),
                     valueColor: AlwaysStoppedAnimation(color),
                   ),
                 ),
-                FaIcon(icon, color: color, size: 20),
+                FaIcon(icon, color: color, size: 18),
               ],
             ),
           ),
         ),
         const SizedBox(height: 6),
         Text('${value.toStringAsFixed(0)}%',
-            style: TextStyle(fontWeight: FontWeight.w800, color: color, fontSize: 14)),
+            style: TextStyle(fontWeight: FontWeight.w800, color: color, fontSize: 13)),
+        const Text('',
+            style: TextStyle(height: 0)), // spacer
         Text(label, style: const TextStyle(fontSize: 11, color: _muted)),
       ],
     );
@@ -955,6 +1064,7 @@ class _Top3Strip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Wrap(
       spacing: 12, runSpacing: 12,
+      alignment: WrapAlignment.center,
       children: items.map((e) {
         return AnimatedContainer(
           duration: const Duration(milliseconds: 250),
@@ -991,9 +1101,9 @@ class _Footer extends StatelessWidget {
     return Container(
       color: _footer,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 28),
-      child: Column(
+      child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
+        children: [
           _FooterRow(),
           SizedBox(height: 12),
           Divider(color: Colors.white24, height: 1),
@@ -1010,8 +1120,8 @@ class _FooterRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: const [
+    return const Row(
+      children: [
         Icon(Icons.auto_graph, color: Colors.white),
         SizedBox(width: 8),
         Text('ALI Orientadora',
@@ -1051,8 +1161,8 @@ class _ExpandableMarkdownState extends State<_ExpandableMarkdown> {
       h3: Theme.of(context).textTheme.titleSmall!.copyWith(fontWeight: FontWeight.w800, color: _ink),
       listBullet: const TextStyle(color: _ink),
       blockquote: const TextStyle(color: _ink),
-      blockquoteDecoration: BoxDecoration(
-        border: Border(left: BorderSide(color: _brand.withOpacity(.6), width: 3)),
+      blockquoteDecoration: const BoxDecoration(
+        border: Border(left: BorderSide(color: _brand, width: 3)),
       ),
       a: const TextStyle(color: _brand, decoration: TextDecoration.underline),
       code: const TextStyle(
