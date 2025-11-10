@@ -4,11 +4,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../env.dart';
 
 class ApiService {
-  // Base de API: ahora viene de Env (Vercel/CI o build local)
-  // Mantengo tus prefijos exactos del backend:
+  // ===== BASES =====
   static const String _usersBase   = '/Alipsicoorientadora/usuarios';
   static const String _tests9Base  = '/Alipsicoorientadora/tests-grado9';
   static const String _tests10Base = '/Alipsicoorientadora/tests-grado10-11';
+
+  // Opcional (azúcar): subrutas de Top3
+  static const String _tests9Top3Base     = '$_tests9Base/top3';
+  static const String _tests9Top3Create   = '$_tests9Top3Base/';       // POST
+  static const String _tests9Top3List     = '$_tests9Top3Base/list/';  // GET (admin)
 
   String get _base => _trimRightSlash(Env.apiBaseUrl);
   static String _trimRightSlash(String s) => s.endsWith('/') ? s.substring(0, s.length - 1) : s;
@@ -697,4 +701,76 @@ class ApiService {
       return null;
     }
   }
+    
+
+    Future<Map<String, dynamic>> enviarTop3Grado9(
+  List<String> top3, {
+  int? testId,
+}) async {
+  if (top3.length != 3) {
+    return {'success': false, 'message': 'Selecciona exactamente 3 opciones.'};
+  }
+
+  final headers = await _authHeaders();
+  final prefs   = await SharedPreferences.getInstance();
+  final userId  = prefs.getInt('user_id');
+
+  final body = <String, dynamic>{
+    'selecciones': top3,
+    if (testId != null) 'test_id': testId,
+    if (userId != null) 'usuario_id': userId,
+  };
+
+  final url = _u(ApiService._tests9Top3Create); // => https://.../Alipsicoorientadora/tests-grado9/top3/
+
+  try {
+    final resp = await http.post(url, headers: headers, body: jsonEncode(body));
+    if (resp.statusCode == 200 || resp.statusCode == 201) {
+      return {'success': true, 'data': jsonDecode(resp.body)};
+    } else {
+      return {
+        'success': false,
+        'status': resp.statusCode,
+        'message': 'Error al guardar Top-3: ${resp.body}',
+      };
+    }
+  } catch (e) {
+    return {'success': false, 'message': 'Error de red al guardar Top-3: $e'};
+  }
+}
+
+  Future<Map<String, dynamic>> listarTop3Grado9Admin({
+  int? limit,
+  int? offset,
+  int? usuarioId, // si tu view los soporta
+  int? testId,    // idem
+}) async {
+  final headers = await _authHeaders();
+
+  final qp = <String, dynamic>{
+    if (limit != null)     'limit':  limit,
+    if (offset != null)    'offset': offset,
+    if (usuarioId != null) 'usuario_id': usuarioId,
+    if (testId != null)    'test_id': testId,
+  };
+
+  final url = _u(ApiService._tests9Top3List, query: qp); // => https://.../Alipsicoorientadora/tests-grado9/top3/list/
+
+  try {
+    final resp = await http.get(url, headers: headers);
+    if (resp.statusCode == 200) {
+      final data = jsonDecode(resp.body) as List;
+      return {'success': true, 'data': data.cast<Map<String, dynamic>>()};
+    } else {
+      return {
+        'success': false,
+        'status': resp.statusCode,
+        'message': 'Error al listar Top-3: ${resp.body}',
+      };
+    }
+  } catch (e) {
+    return {'success': false, 'message': 'Error de red al listar Top-3: $e'};
+  }
+}
+  
 }

@@ -1,13 +1,14 @@
+// lib/screens/test_grado9_screen.dart
 import 'dart:ui';
 import 'dart:math' as math;
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+
+import '../services/api_service.dart';
 import 'resultado_test9_screen.dart';
 import 'estudiante_home.dart';
-import '../services/api_service.dart';
-
 
 class TestGrado9Page extends StatefulWidget {
   const TestGrado9Page({Key? key}) : super(key: key);
@@ -18,7 +19,35 @@ class TestGrado9Page extends StatefulWidget {
 
 class _TestGrado9PageState extends State<TestGrado9Page>
     with TickerProviderStateMixin {
-  // ---------------------- 57 preguntas completas (SIN CAMBIOS)
+  // ---------------------- Estado de red / test
+  final ApiService _api = ApiService();
+  int? _testId; // id del borrador/actual
+  bool _loadingBoot = true;
+  bool _enviandoTop3 = false;
+  bool _enviandoTest = false;
+
+  // ---------------------- Intro Top-3 (se envía una sola vez por testId)
+  final List<String> _modalidades = const [
+    'Emprendimiento y Fomento Empresarial',
+    'Diseño Gráfico',
+    'Contabilidad y Finanzas',
+    'Mantenimiento de Hardware y Software',
+    'Electricidad y Electrónica',
+    'Robótica',
+    'Agroindustria',
+    'Académico',
+    'Primera Infancia',
+    'Seguridad y Salud en el Trabajo',
+    'Promoción de la Salud',
+  ];
+  final Set<String> _seleccionModalidades = {};
+
+  /// Controla si se muestra la intro. Se decide por testId:
+  /// - Si para _testId no existe la marca local "top3_done", se muestra
+  /// - Tras POST exitoso, se oculta y se marca "top3_done"
+  bool _mostrarIntro = false;
+
+  // ---------------------- 57 preguntas (idénticas)
   final List<String> preguntas = [
     // COMERCIO — Emprendimiento y Fomento Empresarial (5)
     '¿Te gustaría aprender a organizar gastos, tareas y avances de un proyecto sencillo?',
@@ -100,135 +129,244 @@ class _TestGrado9PageState extends State<TestGrado9Page>
     '¿Te ves estudiando o trabajando en proyectos de salud o trabajo social?',
   ];
 
-  final Map<String, String> opciones = {
+  final Map<String, String> opciones = const {
     'A': 'Me gusta',
     'B': 'Me interesa',
     'C': 'No me gusta',
   };
 
+  // Respuestas en memoria local (por testId)
   final Map<String, String> respuestas = {};
   int preguntaActual = 0;
-  bool mostrarModal = false;
+  bool mostrarModalEnvio = false;
 
+  // =========================== Ciclo de vida ===========================
   @override
   void initState() {
     super.initState();
-    _cargarProgreso();
+    _boot();
   }
 
-  Future<void> _cargarProgreso() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedIndex = prefs.getInt('grado9_pregunta_actual') ?? 0;
-    final savedResp = prefs.getString('grado9_respuestas');
+  Future<void> _boot() async {
+    try {
+      // 1) Iniciar o retomar borrador en backend ⇒ obtengo id
+      final data = await _api.iniciarOContinuarTestGrado9(); // {id, ...}
+      final id = (data['id'] as num).toInt();
+      _testId = id;
 
-    final nuevoIndex = savedIndex.clamp(0, preguntas.length - 1);
+      // 2) Decidir si mostrar la intro Top-3 para ESTE test
+      final prefs = await SharedPreferences.getInstance();
+      final top3Done = prefs.getBool(_keyTop3Done(id)) ?? false;
+      _mostrarIntro = !top3Done;
 
-    setState(() {
-      preguntaActual = nuevoIndex;
-    });
-
-    if (savedResp != null) {
-      final Map<String, dynamic> respDecoded = jsonDecode(savedResp);
-      setState(() {
-        respuestas.addAll(respDecoded.map((k, v) => MapEntry(k, v.toString())));
-      });
+      // 3) Cargar progreso local ligado a ESTE test
+      await _cargarProgreso(id);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo iniciar el test: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loadingBoot = false);
     }
   }
 
-  Future<void> _guardarProgreso() async {
+  // =========================== Helpers de estado local por test ===========================
+  String _keyTop3Done(int id) => 'grado9_${id}_top3_done';
+  String _keyPreguntaActual(int id) => 'grado9_${id}_pregunta_actual';
+  String _keyRespuestas(int id) => 'grado9_${id}_respuestas';
+
+  Future<void> _cargarProgreso(int id) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('grado9_pregunta_actual', preguntaActual);
-    await prefs.setString('grado9_respuestas', jsonEncode(respuestas));
+
+    final savedIndex = prefs.getInt(_keyPreguntaActual(id)) ?? 0;
+    final savedResp = prefs.getString(_keyRespuestas(id));
+
+    final nuevoIndex = savedIndex.clamp(0, preguntas.length - 1);
+    preguntaActual = nuevoIndex;
+
+    respuestas.clear();
+    if (savedResp != null) {
+      final Map<String, dynamic> respDecoded = jsonDecode(savedResp);
+      respDecoded.forEach((k, v) => respuestas[k] = v.toString());
+    }
+    if (mounted) setState(() {});
   }
 
-  void siguientePregunta() {
+  Future<void> _guardarProgreso() async {
+    if (_testId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_keyPreguntaActual(_testId!), preguntaActual);
+    await prefs.setString(_keyRespuestas(_testId!), jsonEncode(respuestas));
+  }
+
+  Future<void> _marcarTop3HechoLocal() async {
+    if (_testId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyTop3Done(_testId!), true);
+  }
+
+  // =========================== Acciones UI ===========================
+  void _siguiente() {
     if (preguntaActual < preguntas.length - 1) {
       setState(() => preguntaActual++);
       _guardarProgreso();
     } else {
-      setState(() => mostrarModal = true);
+      setState(() => mostrarModalEnvio = true);
     }
   }
 
-  void anteriorPregunta() {
+  void _anterior() {
     if (preguntaActual > 0) {
       setState(() => preguntaActual--);
       _guardarProgreso();
     }
   }
 
-    Future<void> enviarTest() async {
-  final prefs = await SharedPreferences.getInstance();
+  Future<void> _enviarTop3() async {
+    if (_testId == null || _seleccionModalidades.length != 3) return;
+    setState(() => _enviandoTop3 = true);
 
-  // Armar el payload exactamente como lo espera tu backend:
-  final respuestasFinales = {
-    for (var i = 0; i < preguntas.length; i++)
-      'pregunta_${i + 1}': respuestas['pregunta_$i'] ?? ''
-  };
+    try {
+      // ✅ Usa ApiService para respetar Env.apiBaseUrl + headers + usuario_id
+      final resp = await _api.enviarTop3Grado9(
+        _seleccionModalidades.toList(),
+        testId: _testId,
+      );
 
-  // Enviar vía tu servicio centralizado
-  final api = ApiService();
-  final resp = await api.enviarTestGrado9(respuestasFinales);
-
-  if (resp['success'] == true) {
-    // Limpiar progreso local
-    await prefs.remove('grado9_pregunta_actual');
-    await prefs.remove('grado9_respuestas');
-
-    // Extraer el "resultado" para la pantalla (acepta map o string)
-    final data = resp['resultado'];
-    final resultadoStr = (data is Map && data['resultado'] != null)
-        ? data['resultado'].toString()
-        : data.toString();
-
-    // Calcular porcentajes locales (igual que antes)
-    final contador = {'A': 0, 'B': 0, 'C': 0};
-    for (final v in respuestas.values) {
-      if (contador.containsKey(v)) {
-        contador[v] = contador[v]! + 1;
+      if (resp['success'] == true) {
+        await _marcarTop3HechoLocal();
+        if (!mounted) return;
+        setState(() {
+          _mostrarIntro = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Preferencias guardadas. ¡Listo!')),
+        );
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo guardar Top-3: ${resp['message'] ?? 'Error'}')),
+        );
       }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error de red al guardar Top-3: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _enviandoTop3 = false);
     }
-    final total = respuestas.isEmpty ? 1 : respuestas.length;
-    final porcentajes = {
-      'Me gusta': (contador['A']! * 100 / total),
-      'Me interesa': (contador['B']! * 100 / total),
-      'No me gusta': (contador['C']! * 100 / total),
-    };
-
-    if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ResultadoTest9Screen(
-          resultado: resultadoStr,
-          porcentajes: porcentajes,
-          icono: Icons.lightbulb,
-          color: const Color(0xFF93C5FD),
-        ),
-      ),
-    );
-  } else {
-    // Mostrar error del servicio
-    final msg = resp['message']?.toString() ?? 'No se pudo enviar el test.';
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
-}
 
+  Future<void> _enviarTest() async {
+    if (_testId == null) return;
+    setState(() => _enviandoTest = true);
 
+    try {
+      // Construye el mapa { 1: 'A', 2: 'B', ... } a partir de respuestas['pregunta_i']
+      final Map<int, String> payload = {};
+      for (var i = 0; i < preguntas.length; i++) {
+        final key = 'pregunta_$i';
+        final val = respuestas[key] ?? '';
+        payload[i + 1] = val; // backend acepta A/B/C o texto
+      }
+
+      // PATCH bulk al borrador actual para cerrarlo
+      final data = await _api.guardarRespuestasTest9Bulk(payload, ultimaPregunta: preguntas.length);
+
+      // Si ya quedó finalizado, traemos el resultado completo
+      if ((data['estado']?.toString() ?? '') == 'FINALIZADO') {
+        final res = await _api.obtenerResultadoTest9PorId(_testId!);
+        final ok = res['success'] == true;
+        final obj = ok ? (res['data'] as Map<String, dynamic>) : null;
+        final resultado = obj?['resultado']?.toString() ?? 'Resultado no disponible.';
+
+        // Calculito local de porcentajes solo para UI
+        final contador = {'A': 0, 'B': 0, 'C': 0};
+        for (final v in respuestas.values) {
+          if (contador.containsKey(v)) contador[v] = contador[v]! + 1;
+        }
+        final total = respuestas.isEmpty ? 1 : respuestas.length;
+        final porcentajes = {
+          'Me gusta': (contador['A']! * 100 / total),
+          'Me interesa': (contador['B']! * 100 / total),
+          'No me gusta': (contador['C']! * 100 / total),
+        };
+
+        // Limpia el progreso local SOLO de este test
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_keyPreguntaActual(_testId!));
+        await prefs.remove(_keyRespuestas(_testId!));
+        // (No quitamos el top3_done para no re-pedir la intro en este test)
+
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ResultadoTest9Screen(
+              resultado: resultado,
+              porcentajes: porcentajes,
+              icono: Icons.lightbulb,
+              color: const Color(0xFF93C5FD),
+            ),
+          ),
+        );
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo finalizar. Revisa tus respuestas.')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al enviar test: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _enviandoTest = false);
+    }
+  }
+
+  // =========================== Build ===========================
   @override
   Widget build(BuildContext context) {
+    if (_loadingBoot) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    // Si la intro Top-3 está activa para ESTE test, mostrarla primero
+    if (_mostrarIntro) {
+      return Scaffold(
+        body: Stack(
+          children: [
+            const Positioned.fill(child: _AcademicBackground()),
+            Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                child: _buildIntroCard(),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Pantalla de preguntas
     final pregunta = preguntas[preguntaActual];
     final respuestaSeleccionada = respuestas['pregunta_$preguntaActual'] ?? '';
     final double progreso = preguntas.isEmpty ? 0 : (respuestas.length / preguntas.length);
 
-    if (mostrarModal) {
+    if (mostrarModalEnvio) {
       Future.microtask(() {
-        setState(() => mostrarModal = false);
+        setState(() => mostrarModalEnvio = false);
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (_) => _buildModernDialog(),
+          builder: (_) => _buildEnviarDialog(),
         );
       });
     }
@@ -248,23 +386,24 @@ class _TestGrado9PageState extends State<TestGrado9Page>
     );
   }
 
-  Widget _buildQuestionCard(String pregunta, String respuestaSeleccionada, double progreso) {
+  // =========================== Widgets ===========================
+  // Intro Top-3
+  Widget _buildIntroCard() {
+    final double progresoIntro = 0.0;
+    final bool listo = _seleccionModalidades.length == 3;
+
     return Container(
       constraints: const BoxConstraints(maxWidth: 580),
       padding: const EdgeInsets.all(28),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: const Color(0xFF93C5FD).withOpacity(0.35),
-          width: 2,
-        ),
+        border: Border.all(color: const Color(0xFF93C5FD).withOpacity(0.35), width: 2),
         boxShadow: [
           BoxShadow(
             color: const Color(0xFF60A5FA).withOpacity(0.10),
             blurRadius: 40,
             offset: const Offset(0, 20),
-            spreadRadius: 0,
           ),
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
@@ -282,19 +421,19 @@ class _TestGrado9PageState extends State<TestGrado9Page>
               Material(
                 color: Colors.transparent,
                 child: InkWell(
-                  onTap: () {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (_) => const EstudianteHome()),
-                    );
-                  },
+                  onTap: _enviandoTop3
+                      ? null
+                      : () {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(builder: (_) => const EstudianteHome()),
+                          );
+                        },
                   borderRadius: BorderRadius.circular(14),
                   child: Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF93C5FD), Color(0xFF60A5FA)],
-                      ),
+                      gradient: const LinearGradient(colors: [Color(0xFF93C5FD), Color(0xFF60A5FA)]),
                       borderRadius: BorderRadius.circular(14),
                       boxShadow: [
                         BoxShadow(
@@ -304,11 +443,213 @@ class _TestGrado9PageState extends State<TestGrado9Page>
                         ),
                       ],
                     ),
-                    child: const Icon(
-                      Icons.arrow_back_ios_new_rounded,
-                      color: Colors.white,
-                      size: 18,
+                    child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(child: _buildProgressBar(progresoIntro)),
+            ],
+          ),
+          const SizedBox(height: 24),
+          _buildQuestionText(
+            'Si hoy tuvieras que elegir tres opciones de especialidad técnica o modalidad académica, '
+            '¿cuáles escogerías?\n\nSelecciona exactamente 3 opciones.',
+          ),
+          const SizedBox(height: 20),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: _modalidades.map((m) => _buildMultiSelectPill(m)).toList(),
+          ),
+          const SizedBox(height: 24),
+          _buildIntroNavButton(
+            label: _enviandoTop3 ? 'Guardando…' : 'Continuar',
+            icon: Icons.arrow_forward_rounded,
+            enabled: listo && !_enviandoTop3,
+            onPressed: () async {
+              await _enviarTop3(); // se oculta tras éxito
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMultiSelectPill(String text) {
+    final bool isSelected = _seleccionModalidades.contains(text);
+    return InkWell(
+      onTap: _enviandoTop3
+          ? null
+          : () {
+              setState(() {
+                if (isSelected) {
+                  _seleccionModalidades.remove(text);
+                } else {
+                  if (_seleccionModalidades.length < 3) {
+                    _seleccionModalidades.add(text);
+                  }
+                }
+              });
+            },
+      borderRadius: BorderRadius.circular(24),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          gradient: isSelected
+              ? const LinearGradient(
+                  colors: [Color(0xFF93C5FD), Color(0xFF60A5FA)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : LinearGradient(
+                  colors: [
+                    Colors.white.withOpacity(0.9),
+                    const Color(0xFFF0F6FF).withOpacity(0.7),
+                  ],
+                ),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF60A5FA) : const Color(0xFFDEEAFE).withOpacity(0.8),
+            width: isSelected ? 2 : 1.5,
+          ),
+          boxShadow: [
+            if (isSelected)
+              BoxShadow(
+                color: const Color(0xFF60A5FA).withOpacity(0.25),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isSelected)
+              Container(
+                margin: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.all(4),
+                decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+                child: const Icon(Icons.check_rounded, size: 14, color: Color(0xFF60A5FA)),
+              ),
+            Text(
+              text,
+              style: TextStyle(
+                color: isSelected ? Colors.white : const Color(0xFF1E3A8A),
+                fontSize: 14.5,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                letterSpacing: 0.2,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIntroNavButton({
+    required String label,
+    required IconData icon,
+    required bool enabled,
+    required VoidCallback onPressed,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? onPressed : null,
+        borderRadius: BorderRadius.circular(15),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 15),
+          decoration: BoxDecoration(
+            gradient: enabled
+                ? const LinearGradient(colors: [Color(0xFF93C5FD), Color(0xFF60A5FA)])
+                : null,
+            color: enabled ? null : const Color(0xFFDEEAFE).withOpacity(0.5),
+            borderRadius: BorderRadius.circular(15),
+            boxShadow: [
+              if (enabled)
+                BoxShadow(
+                  color: const Color(0xFF60A5FA).withOpacity(0.30),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: enabled ? Colors.white : Colors.grey.shade400,
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(icon, color: enabled ? Colors.white : Colors.grey.shade400, size: 19),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Preguntas
+  Widget _buildQuestionCard(String pregunta, String respuestaSeleccionada, double progreso) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 580),
+      padding: const EdgeInsets.all(28),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: const Color(0xFF93C5FD).withOpacity(0.35), width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF60A5FA).withOpacity(0.10),
+            blurRadius: 40,
+            offset: const Offset(0, 20),
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: _enviandoTest
+                      ? null
+                      : () {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(builder: (_) => const EstudianteHome()),
+                          );
+                        },
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(colors: [Color(0xFF93C5FD), Color(0xFF60A5FA)]),
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF60A5FA).withOpacity(0.25),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
+                    child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
                   ),
                 ),
               ),
@@ -319,12 +660,8 @@ class _TestGrado9PageState extends State<TestGrado9Page>
           const SizedBox(height: 24),
           _buildQuestionText(pregunta),
           const SizedBox(height: 24),
-          ...opciones.entries.map((opcion) {
-            return _buildOptionButton(
-              opcion.key,
-              opcion.value,
-              respuestaSeleccionada == opcion.key,
-            );
+          ...opciones.entries.map((op) {
+            return _buildOptionButton(op.key, op.value, respuestaSeleccionada == op.key);
           }).toList(),
           const SizedBox(height: 28),
           _buildNavigationButtons(respuestaSeleccionada),
@@ -381,9 +718,7 @@ class _TestGrado9PageState extends State<TestGrado9Page>
                     child: Container(
                       height: 9,
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF93C5FD), Color(0xFF60A5FA)],
-                        ),
+                        gradient: const LinearGradient(colors: [Color(0xFF93C5FD), Color(0xFF60A5FA)]),
                         borderRadius: BorderRadius.circular(10),
                         boxShadow: [
                           BoxShadow(
@@ -411,16 +746,10 @@ class _TestGrado9PageState extends State<TestGrado9Page>
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            const Color(0xFFF0F6FF),
-            const Color(0xFFE0EFFE).withOpacity(0.7),
-          ],
+          colors: [const Color(0xFFF0F6FF), const Color(0xFFE0EFFE).withOpacity(0.7)],
         ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: const Color(0xFF93C5FD).withOpacity(0.25),
-          width: 1.5,
-        ),
+        border: Border.all(color: const Color(0xFF93C5FD).withOpacity(0.25), width: 1.5),
       ),
       child: Text(
         pregunta,
@@ -442,12 +771,14 @@ class _TestGrado9PageState extends State<TestGrado9Page>
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () {
-            setState(() {
-              respuestas['pregunta_$preguntaActual'] = key;
-            });
-            _guardarProgreso();
-          },
+          onTap: _enviandoTest
+              ? null
+              : () {
+                  setState(() {
+                    respuestas['pregunta_$preguntaActual'] = key;
+                  });
+                  _guardarProgreso();
+                },
           borderRadius: BorderRadius.circular(18),
           child: Container(
             padding: const EdgeInsets.all(16),
@@ -466,9 +797,7 @@ class _TestGrado9PageState extends State<TestGrado9Page>
                     ),
               borderRadius: BorderRadius.circular(18),
               border: Border.all(
-                color: isSelected
-                    ? const Color(0xFF60A5FA)
-                    : const Color(0xFFDEEAFE).withOpacity(0.8),
+                color: isSelected ? const Color(0xFF60A5FA) : const Color(0xFFDEEAFE).withOpacity(0.8),
                 width: isSelected ? 2 : 1.5,
               ),
               boxShadow: [
@@ -486,9 +815,7 @@ class _TestGrado9PageState extends State<TestGrado9Page>
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: isSelected
-                        ? Colors.white
-                        : const Color(0xFF93C5FD).withOpacity(0.20),
+                    color: isSelected ? Colors.white : const Color(0xFF93C5FD).withOpacity(0.20),
                     shape: BoxShape.circle,
                     boxShadow: [
                       if (isSelected)
@@ -503,9 +830,7 @@ class _TestGrado9PageState extends State<TestGrado9Page>
                     child: Text(
                       key,
                       style: TextStyle(
-                        color: isSelected
-                            ? const Color(0xFF60A5FA)
-                            : const Color(0xFF1E3A8A),
+                        color: isSelected ? const Color(0xFF60A5FA) : const Color(0xFF1E3A8A),
                         fontSize: 17,
                         fontWeight: FontWeight.bold,
                       ),
@@ -527,15 +852,8 @@ class _TestGrado9PageState extends State<TestGrado9Page>
                 if (isSelected)
                   Container(
                     padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.3),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.check_rounded,
-                      color: Colors.white,
-                      size: 17,
-                    ),
+                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.3), shape: BoxShape.circle),
+                    child: const Icon(Icons.check_rounded, color: Colors.white, size: 17),
                   ),
               ],
             ),
@@ -546,6 +864,7 @@ class _TestGrado9PageState extends State<TestGrado9Page>
   }
 
   Widget _buildNavigationButtons(String respuestaSeleccionada) {
+    final bool puedeAvanzar = respuestaSeleccionada.isNotEmpty && !_enviandoTest;
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -556,7 +875,7 @@ class _TestGrado9PageState extends State<TestGrado9Page>
               child: _buildNavButton(
                 label: 'Anterior',
                 icon: Icons.arrow_back_rounded,
-                onPressed: anteriorPregunta,
+                onPressed: _enviandoTest ? null : _anterior,
                 isPrimary: false,
               ),
             ),
@@ -565,11 +884,13 @@ class _TestGrado9PageState extends State<TestGrado9Page>
           child: Padding(
             padding: EdgeInsets.only(left: preguntaActual > 0 ? 8 : 0),
             child: _buildNavButton(
-              label: preguntaActual == preguntas.length - 1 ? 'Finalizar' : 'Siguiente',
+              label: preguntaActual == preguntas.length - 1 ? (_enviandoTest ? 'Enviando…' : 'Finalizar') : 'Siguiente',
               icon: preguntaActual == preguntas.length - 1
                   ? Icons.check_circle_outline_rounded
                   : Icons.arrow_forward_rounded,
-              onPressed: respuestaSeleccionada.isNotEmpty ? siguientePregunta : null,
+              onPressed: preguntaActual == preguntas.length - 1
+                  ? (puedeAvanzar ? () => setState(() => mostrarModalEnvio = true) : null)
+                  : (puedeAvanzar ? _siguiente : null),
               isPrimary: true,
               iconAtEnd: true,
             ),
@@ -618,21 +939,13 @@ class _TestGrado9PageState extends State<TestGrado9Page>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               if (!iconAtEnd) ...[
-                Icon(
-                  icon,
-                  color: isPrimary
-                      ? (isEnabled ? Colors.white : Colors.grey.shade400)
-                      : const Color(0xFF1E3A8A),
-                  size: 19,
-                ),
+                Icon(icon, color: isPrimary ? (isEnabled ? Colors.white : Colors.grey.shade400) : const Color(0xFF1E3A8A), size: 19),
                 const SizedBox(width: 8),
               ],
               Text(
                 label,
                 style: TextStyle(
-                  color: isPrimary
-                      ? (isEnabled ? Colors.white : Colors.grey.shade400)
-                      : const Color(0xFF1E3A8A),
+                  color: isPrimary ? (isEnabled ? Colors.white : Colors.grey.shade400) : const Color(0xFF1E3A8A),
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 0.5,
@@ -640,13 +953,7 @@ class _TestGrado9PageState extends State<TestGrado9Page>
               ),
               if (iconAtEnd) ...[
                 const SizedBox(width: 8),
-                Icon(
-                  icon,
-                  color: isPrimary
-                      ? (isEnabled ? Colors.white : Colors.grey.shade400)
-                      : const Color(0xFF1E3A8A),
-                  size: 19,
-                ),
+                Icon(icon, color: isPrimary ? (isEnabled ? Colors.white : Colors.grey.shade400) : const Color(0xFF1E3A8A), size: 19),
               ],
             ],
           ),
@@ -655,29 +962,18 @@ class _TestGrado9PageState extends State<TestGrado9Page>
     );
   }
 
-  Widget _buildModernDialog() {
+  Widget _buildEnviarDialog() {
     return Dialog(
       backgroundColor: Colors.transparent,
       child: Container(
         constraints: const BoxConstraints(maxWidth: 400),
         padding: const EdgeInsets.all(28),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Colors.white, Color(0xFFF0F6FF)],
-          ),
+          gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Colors.white, Color(0xFFF0F6FF)]),
           borderRadius: BorderRadius.circular(26),
-          border: Border.all(
-            color: const Color(0xFF93C5FD).withOpacity(0.35),
-            width: 1.5,
-          ),
+          border: Border.all(color: const Color(0xFF93C5FD).withOpacity(0.35), width: 1.5),
           boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF60A5FA).withOpacity(0.20),
-              blurRadius: 32,
-              offset: const Offset(0, 16),
-            ),
+            BoxShadow(color: const Color(0xFF60A5FA).withOpacity(0.20), blurRadius: 32, offset: const Offset(0, 16)),
           ],
         ),
         child: Column(
@@ -686,16 +982,10 @@ class _TestGrado9PageState extends State<TestGrado9Page>
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF93C5FD), Color(0xFF60A5FA)],
-                ),
+                gradient: const LinearGradient(colors: [Color(0xFF93C5FD), Color(0xFF60A5FA)]),
                 shape: BoxShape.circle,
                 boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF60A5FA).withOpacity(0.30),
-                    blurRadius: 16,
-                    offset: const Offset(0, 4),
-                  ),
+                  BoxShadow(color: const Color(0xFF60A5FA).withOpacity(0.30), blurRadius: 16, offset: const Offset(0, 4)),
                 ],
               ),
               child: const Icon(Icons.send_rounded, color: Colors.white, size: 30),
@@ -703,11 +993,7 @@ class _TestGrado9PageState extends State<TestGrado9Page>
             const SizedBox(height: 20),
             const Text(
               '¿Enviar respuestas?',
-              style: TextStyle(
-                fontSize: 21,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1E3A8A),
-              ),
+              style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A)),
             ),
             const SizedBox(height: 12),
             Text(
@@ -728,11 +1014,13 @@ class _TestGrado9PageState extends State<TestGrado9Page>
                 const SizedBox(width: 12),
                 Expanded(
                   child: _buildDialogButton(
-                    label: 'Enviar',
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      enviarTest();
-                    },
+                    label: _enviandoTest ? 'Enviando…' : 'Enviar',
+                    onPressed: _enviandoTest
+                        ? null
+                        : () async {
+                            Navigator.of(context).pop();
+                            await _enviarTest();
+                          },
                     isPrimary: true,
                   ),
                 ),
@@ -746,9 +1034,10 @@ class _TestGrado9PageState extends State<TestGrado9Page>
 
   Widget _buildDialogButton({
     required String label,
-    required VoidCallback onPressed,
+    required VoidCallback? onPressed,
     required bool isPrimary,
   }) {
+    final enabled = onPressed != null;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -757,25 +1046,23 @@ class _TestGrado9PageState extends State<TestGrado9Page>
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
-            gradient: isPrimary
-                ? const LinearGradient(colors: [Color(0xFF93C5FD), Color(0xFF60A5FA)])
-                : null,
-            color: !isPrimary ? const Color(0xFFE5E7EB).withOpacity(0.8) : null,
+            gradient: isPrimary && enabled ? const LinearGradient(colors: [Color(0xFF93C5FD), Color(0xFF60A5FA)]) : null,
+            color: !isPrimary
+                ? const Color(0xFFE5E7EB).withOpacity(0.8)
+                : enabled
+                    ? null
+                    : const Color(0xFFDEEAFE).withOpacity(0.5),
             borderRadius: BorderRadius.circular(14),
             boxShadow: [
-              if (isPrimary)
-                BoxShadow(
-                  color: const Color(0xFF60A5FA).withOpacity(0.30),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
+              if (isPrimary && enabled)
+                BoxShadow(color: const Color(0xFF60A5FA).withOpacity(0.30), blurRadius: 12, offset: const Offset(0, 4)),
             ],
           ),
           child: Center(
             child: Text(
               label,
               style: TextStyle(
-                color: isPrimary ? Colors.white : const Color(0xFF1E3A8A),
+                color: isPrimary ? (enabled ? Colors.white : Colors.grey.shade400) : const Color(0xFF1E3A8A),
                 fontSize: 15,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 0.5,
@@ -788,7 +1075,7 @@ class _TestGrado9PageState extends State<TestGrado9Page>
   }
 }
 
-// FONDO ACADÉMICO
+// =========================== Fondo decorativo ===========================
 class _AcademicBackground extends StatefulWidget {
   const _AcademicBackground();
 
@@ -804,10 +1091,7 @@ class _AcademicBackgroundState extends State<_AcademicBackground>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      duration: const Duration(seconds: 30),
-      vsync: this,
-    )..repeat(reverse: true);
+    _controller = AnimationController(duration: const Duration(seconds: 30), vsync: this)..repeat(reverse: true);
     _animation = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
   }
 
@@ -829,50 +1113,28 @@ class _AcademicBackgroundState extends State<_AcademicBackground>
                 gradient: LinearGradient(
                   begin: Alignment(-0.9, -1),
                   end: Alignment(1, 1),
-                  colors: [
-                    Color(0xFFE0F2FE),
-                    Color(0xFFBAE6FD),
-                    Color(0xFF93C5FD),
-                  ],
+                  colors: [Color(0xFFE0F2FE), Color(0xFFBAE6FD), Color(0xFF93C5FD)],
                 ),
               ),
             ),
-            CustomPaint(
-              painter: _SoftOrbsPainter(_animation.value),
-              size: Size.infinite,
-            ),
+            CustomPaint(painter: _SoftOrbsPainter(_animation.value), size: Size.infinite),
             Positioned(
               left: -30,
               bottom: 40,
               child: Opacity(
                 opacity: 0.18,
-                child: CustomPaint(
-                  size: const Size(300, 380),
-                  painter: _TeacherPainter(_animation.value),
-                ),
+                child: CustomPaint(size: const Size(300, 380), painter: _TeacherPainter(_animation.value)),
               ),
             ),
-            CustomPaint(
-              painter: _AcademicObjectsPainter(_animation.value),
-              size: Size.infinite,
-            ),
-            CustomPaint(
-              painter: _MathSymbolsPainter(_animation.value),
-              size: Size.infinite,
-            ),
-            CustomPaint(
-              painter: _ShiningParticlesPainter(_animation.value),
-              size: Size.infinite,
-            ),
+            CustomPaint(painter: _AcademicObjectsPainter(_animation.value), size: Size.infinite),
+            CustomPaint(painter: _MathSymbolsPainter(_animation.value), size: Size.infinite),
+            CustomPaint(painter: _ShiningParticlesPainter(_animation.value), size: Size.infinite),
             Container(
               decoration: BoxDecoration(
                 gradient: RadialGradient(
                   center: Alignment.center,
                   radius: 1.3,
-                  colors: [
-                    Colors.white.withOpacity(0.12),
-                    Colors.transparent,
-                  ],
+                  colors: [Colors.white.withOpacity(0.12), Colors.transparent],
                 ),
               ),
             ),
@@ -883,7 +1145,7 @@ class _AcademicBackgroundState extends State<_AcademicBackground>
   }
 }
 
-// Painters (idénticos a test 10-11)
+// Painters
 class _TeacherPainter extends CustomPainter {
   final double t;
   _TeacherPainter(this.t);
@@ -981,12 +1243,9 @@ class _SoftOrbsPainter extends CustomPainter {
       canvas.drawCircle(animatedCenter, radius, paint);
     }
 
-    drawOrb(Offset(size.width * 0.25, size.height * 0.25), size.width * 0.30,
-        const Color(0xFF93C5FD), 25, 20);
-    drawOrb(Offset(size.width * 0.75, size.height * 0.22), size.width * 0.35,
-        const Color(0xFF60A5FA), -20, 25);
-    drawOrb(Offset(size.width * 0.50, size.height * 0.75), size.width * 0.38,
-        const Color(0xFF7DD3FC), 18, -18);
+    drawOrb(Offset(size.width * 0.25, size.height * 0.25), size.width * 0.30, const Color(0xFF93C5FD), 25, 20);
+    drawOrb(Offset(size.width * 0.75, size.height * 0.22), size.width * 0.35, const Color(0xFF60A5FA), -20, 25);
+    drawOrb(Offset(size.width * 0.50, size.height * 0.75), size.width * 0.38, const Color(0xFF7DD3FC), 18, -18);
   }
 
   @override
@@ -1002,26 +1261,19 @@ class _AcademicObjectsPainter extends CustomPainter {
     final paint = Paint()..style = PaintingStyle.fill;
 
     _drawBook(canvas, paint,
-        Offset(size.width * 0.12 + 12 * math.sin(t * 2 * math.pi),
-            size.height * 0.20 + 10 * math.cos(t * 2 * math.pi)),
+        Offset(size.width * 0.12 + 12 * math.sin(t * 2 * math.pi), size.height * 0.20 + 10 * math.cos(t * 2 * math.pi)),
         0.15 + 0.08 * math.sin(t * 2 * math.pi), const Color(0xFF60A5FA));
 
     _drawBook(canvas, paint,
-        Offset(size.width * 0.85 + 10 * math.cos((t + 0.3) * 2 * math.pi),
-            size.height * 0.28 + 12 * math.sin((t + 0.3) * 2 * math.pi)),
+        Offset(size.width * 0.85 + 10 * math.cos((t + 0.3) * 2 * math.pi), size.height * 0.28 + 12 * math.sin((t + 0.3) * 2 * math.pi)),
         -0.12 + 0.08 * math.cos(t * 2 * math.pi), const Color(0xFF93C5FD));
 
-    _drawGlobe(canvas, paint,
-        Offset(size.width * 0.88 + 11 * math.cos(t * 2 * math.pi),
-            size.height * 0.18 + 13 * math.sin(t * 2 * math.pi)));
+    _drawGlobe(canvas, paint, Offset(size.width * 0.88 + 11 * math.cos(t * 2 * math.pi), size.height * 0.18 + 13 * math.sin(t * 2 * math.pi)));
 
-    _drawCalculator(canvas, paint,
-        Offset(size.width * 0.82 + 10 * math.sin((t + 0.2) * 2 * math.pi),
-            size.height * 0.70 + 8 * math.cos((t + 0.2) * 2 * math.pi)));
+    _drawCalculator(canvas, paint, Offset(size.width * 0.82 + 10 * math.sin((t + 0.2) * 2 * math.pi), size.height * 0.70 + 8 * math.cos((t + 0.2) * 2 * math.pi)));
 
     _drawDiploma(canvas, paint,
-        Offset(size.width * 0.50 + 7 * math.sin((t + 0.8) * 2 * math.pi),
-            size.height * 0.12 + 9 * math.cos((t + 0.8) * 2 * math.pi)),
+        Offset(size.width * 0.50 + 7 * math.sin((t + 0.8) * 2 * math.pi), size.height * 0.12 + 9 * math.cos((t + 0.8) * 2 * math.pi)),
         -0.10 + 0.08 * math.cos(t * 2 * math.pi));
   }
 
@@ -1030,10 +1282,7 @@ class _AcademicObjectsPainter extends CustomPainter {
     canvas.translate(pos.dx, pos.dy);
     canvas.rotate(rotation);
     paint.color = color.withOpacity(0.25);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(const Rect.fromLTWH(-20, -28, 40, 56), const Radius.circular(4)),
-      paint,
-    );
+    canvas.drawRRect(RRect.fromRectAndRadius(const Rect.fromLTWH(-20, -28, 40, 56), const Radius.circular(4)), paint);
     paint.color = Colors.white.withOpacity(0.2);
     canvas.drawRect(const Rect.fromLTWH(-15, -23, 30, 6), paint);
     canvas.restore();
@@ -1058,10 +1307,7 @@ class _AcademicObjectsPainter extends CustomPainter {
     canvas.save();
     canvas.translate(pos.dx, pos.dy);
     paint.color = const Color(0xFF93C5FD).withOpacity(0.25);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(const Rect.fromLTWH(-17, -25, 34, 50), const Radius.circular(5)),
-      paint,
-    );
+    canvas.drawRRect(RRect.fromRectAndRadius(const Rect.fromLTWH(-17, -25, 34, 50), const Radius.circular(5)), paint);
     paint.color = const Color(0xFF60A5FA).withOpacity(0.30);
     canvas.drawRect(const Rect.fromLTWH(-12, -20, 24, 12), paint);
     for (int i = 0; i < 3; i++) {
@@ -1077,17 +1323,11 @@ class _AcademicObjectsPainter extends CustomPainter {
     canvas.translate(pos.dx, pos.dy);
     canvas.rotate(rotation);
     paint.color = const Color(0xFF93C5FD).withOpacity(0.20);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(const Rect.fromLTWH(-25, -17, 50, 34), const Radius.circular(3)),
-      paint,
-    );
+    canvas.drawRRect(RRect.fromRectAndRadius(const Rect.fromLTWH(-25, -17, 50, 34), const Radius.circular(3)), paint);
     paint.style = PaintingStyle.stroke;
     paint.strokeWidth = 1.5;
     paint.color = const Color(0xFF60A5FA).withOpacity(0.30);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(const Rect.fromLTWH(-22, -14, 44, 28), const Radius.circular(2)),
-      paint,
-    );
+    canvas.drawRRect(RRect.fromRectAndRadius(const Rect.fromLTWH(-22, -14, 44, 28), const Radius.circular(2)), paint);
     paint.style = PaintingStyle.fill;
     canvas.restore();
   }
@@ -1102,25 +1342,17 @@ class _MathSymbolsPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    _drawMathSymbol(canvas, '+',
-        Offset(size.width * 0.22, size.height * 0.15 + 10 * math.sin((t + 0.1) * 2 * math.pi)));
-    _drawMathSymbol(canvas, '×',
-        Offset(size.width * 0.78, size.height * 0.35 + 12 * math.cos((t + 0.3) * 2 * math.pi)));
-    _drawMathSymbol(canvas, '÷',
-        Offset(size.width * 0.15, size.height * 0.82 + 8 * math.sin((t + 0.6) * 2 * math.pi)));
-    _drawMathSymbol(canvas, '=',
-        Offset(size.width * 0.85, size.height * 0.82 + 10 * math.cos((t + 0.8) * 2 * math.pi)));
+    _drawMathSymbol(canvas, '+', Offset(size.width * 0.22, size.height * 0.15 + 10 * math.sin((t + 0.1) * 2 * math.pi)));
+    _drawMathSymbol(canvas, '×', Offset(size.width * 0.78, size.height * 0.35 + 12 * math.cos((t + 0.3) * 2 * math.pi)));
+    _drawMathSymbol(canvas, '÷', Offset(size.width * 0.15, size.height * 0.82 + 8 * math.sin((t + 0.6) * 2 * math.pi)));
+    _drawMathSymbol(canvas, '=', Offset(size.width * 0.85, size.height * 0.82 + 10 * math.cos((t + 0.8) * 2 * math.pi)));
   }
 
   void _drawMathSymbol(Canvas canvas, String symbol, Offset pos) {
     final textPainter = TextPainter(
       text: TextSpan(
         text: symbol,
-        style: TextStyle(
-          fontSize: 32,
-          fontWeight: FontWeight.bold,
-          color: const Color(0xFF93C5FD).withOpacity(0.25),
-        ),
+        style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: const Color(0xFF93C5FD).withOpacity(0.25)),
       ),
       textDirection: TextDirection.ltr,
     );
