@@ -39,18 +39,25 @@ class _ResultadoTest1011ScreenState extends State<ResultadoTest1011Screen>
   void initState() {
     super.initState();
     _calcularPorcentajes();
+
+    // === Etiqueta de carrera: obtener, limpiar y configurar ===
     carreraLabel = _extractCareerLabel(widget.resultado).trim();
     if (carreraLabel.isEmpty) {
       carreraLabel = _pretty(widget.resultado).trim();
     }
+    carreraLabel = _sanitizeCareerName(carreraLabel); // <- limpia "Top-3"/prefijos
+    _configurarIconoYColor(carreraLabel);
+
+    // === Explicación ===
     explicacion = _extractExplanation(widget.resultado).trim();
     if (explicacion.isEmpty) {
       explicacion =
           'Estamos preparando tu explicación personalizada según tus respuestas.';
     }
-    _configurarIconoYColor(carreraLabel);
+
     _generarTopCarreras();
 
+    // Animaciones
     _fadeController = AnimationController(
       duration: const Duration(milliseconds: 800),
       vsync: this,
@@ -95,63 +102,79 @@ class _ResultadoTest1011ScreenState extends State<ResultadoTest1011Screen>
     };
   }
 
-    void _generarTopCarreras() {
-  // Extraer Top-3 desde el texto del backend
-  final top3Extraido = _extractTop3FromText(widget.resultado);
-  
-  final colores = [
-    accentColor,  // Color principal para la carrera #1
-    const Color(0xFF8B5CF6),  // Púrpura para #2
-    const Color(0xFFEC4899),  // Rosa para #3
-  ];
-  
-  final iconos = [
-    icono,  // Icono principal para la carrera #1
-    FontAwesomeIcons.lightbulb,
-    FontAwesomeIcons.star,
-  ];
-  
-  topCarreras = [];
-  for (int i = 0; i < top3Extraido.length && i < 3; i++) {
-    final entry = top3Extraido[i];
-    final nombre = entry.key;
-    final scoreStr = entry.value;
-    
-    // Convertir el score (0.58) a porcentaje (58%)
-    double porcentaje = 0.0;
-    try {
-      final scoreNum = double.parse(scoreStr);
-      porcentaje = scoreNum * 100;  // 0.58 -> 58.0
-    } catch (_) {
-      porcentaje = 0.0;
+  void _generarTopCarreras() {
+    // Extraer Top-3 desde el texto del backend
+    final top3Extraido = _extractTop3FromText(widget.resultado);
+
+    final colores = [
+      accentColor, // Color principal para la carrera #1
+      const Color(0xFF8B5CF6), // Púrpura para #2
+      const Color(0xFFEC4899), // Rosa para #3
+    ];
+
+    final iconos = [
+      icono, // Icono principal para la carrera #1
+      FontAwesomeIcons.lightbulb,
+      FontAwesomeIcons.star,
+    ];
+
+    topCarreras = [];
+    for (int i = 0; i < top3Extraido.length && i < 3; i++) {
+      final entry = top3Extraido[i];
+      final nombre = entry.key;
+      final scoreStr = entry.value;
+
+      // Convertir el score (0.58) a porcentaje (58%)
+      double porcentaje = 0.0;
+      try {
+        final scoreNum = double.parse(scoreStr);
+        porcentaje = scoreNum * 100; // 0.58 -> 58.0
+      } catch (_) {
+        porcentaje = 0.0;
+      }
+
+      topCarreras.add({
+        'nombre': nombre,
+        'porcentaje': porcentaje,
+        'color': colores[i],
+        'icono': iconos[i],
+      });
     }
-    
-    topCarreras.add({
-      'nombre': nombre,
-      'porcentaje': porcentaje,
-      'color': colores[i],
-      'icono': iconos[i],
-    });
   }
-}
 
-// ✅ Agregar este método para extraer el Top-3
-List<MapEntry<String, String>> _extractTop3FromText(String texto) {
-  final re = RegExp(r'Top-3:\s*(.+)', caseSensitive: false);
-  final m = re.firstMatch(texto);
-  if (m == null) return [];
-  final listRaw = m.group(1)!;
-  final parts = listRaw.split(',');
-  final out = <MapEntry<String, String>>[];
-  for (final p in parts.take(3)) {
-    final t = p.trim();
-    final name = t.replaceAll(RegExp(r'\([^\)]*\)'), '').trim();
-    final score = RegExp(r'\(([^)]*)\)').firstMatch(t)?.group(1) ?? '';
-    if (name.isNotEmpty) out.add(MapEntry(name, score));
+  // ✅ Extraer el Top-3 del texto
+  List<MapEntry<String, String>> _extractTop3FromText(String texto) {
+    final re = RegExp(r'Top-3:\s*(.+)', caseSensitive: false);
+    final m = re.firstMatch(texto);
+    if (m == null) return [];
+    final listRaw = m.group(1)!;
+    final parts = listRaw.split(',');
+    final out = <MapEntry<String, String>>[];
+    for (final p in parts.take(3)) {
+      final t = p.trim();
+      final name = t.replaceAll(RegExp(r'\([^\)]*\)'), '').trim();
+      final score = RegExp(r'\(([^)]*)\)').firstMatch(t)?.group(1) ?? '';
+      if (name.isNotEmpty) out.add(MapEntry(name, score));
+    }
+    return out;
   }
-  return out;
-}
 
+  // ✅ Sanitiza nombre para quitar "Top-3" o prefijos del backend
+  String _sanitizeCareerName(String raw) {
+    var s = raw;
+    // Corta antes de cualquier "Top-3:"
+    if (s.toLowerCase().contains('top-3')) {
+      s = s.split(RegExp(r'Top-3\s*:?', caseSensitive: false)).first.trim();
+    }
+    // Si queda un prefijo tipo "Carrera sugerida por ALI: X", quédate con X
+    final m = RegExp(r'Carrera sugerida por ALI\s*:?\s*(.+)',
+            caseSensitive: false)
+        .firstMatch(s);
+    if (m != null) s = m.group(1)!.trim();
+    // primera línea
+    s = s.split('\n').first.trim();
+    return s;
+  }
 
   String _pretty(String s) {
     if (s.contains(RegExp(r'[ÃÂ]'))) {
@@ -597,7 +620,18 @@ List<MapEntry<String, String>> _extractTop3FromText(String texto) {
               letterSpacing: 0.5,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
+          const Text(
+            'Carrera sugerida por ALI',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF334155),
+              letterSpacing: 0.0,
+            ),
+          ),
+          const SizedBox(height: 6),
           Text(
             carreraLabel,
             textAlign: TextAlign.center,
@@ -605,9 +639,11 @@ List<MapEntry<String, String>> _extractTop3FromText(String texto) {
               fontSize: 32,
               fontWeight: FontWeight.w900,
               color: Color(0xFF1E3A8A),
-              height: 1.2,
+              height: 1.15,
               letterSpacing: -0.5,
             ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -619,14 +655,13 @@ List<MapEntry<String, String>> _extractTop3FromText(String texto) {
       children: [
         // Card destacada de Recomendación (arriba, sola)
         _buildExplicacionCardHero(isWide),
-        
         const SizedBox(height: 24),
 
         // Resto de cards en fila
         LayoutBuilder(
           builder: (context, constraints) {
             final isMobile = constraints.maxWidth < 900;
-            
+
             if (isMobile) {
               return Column(
                 children: [
@@ -681,7 +716,7 @@ List<MapEntry<String, String>> _extractTop3FromText(String texto) {
                   size: 24,
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
               const Expanded(
                 child: Text(
                   'Tu Recomendación Personalizada',
@@ -689,21 +724,25 @@ List<MapEntry<String, String>> _extractTop3FromText(String texto) {
                     fontSize: 22,
                     fontWeight: FontWeight.w900,
                     color: Color(0xFF1E3A8A),
-                    letterSpacing: -0.3,
+                    letterSpacing: -0.2,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12), // compactado (antes 20)
           Text(
             explicacion,
+            textHeightBehavior: const TextHeightBehavior(
+              applyHeightToFirstAscent: false,
+              applyHeightToLastDescent: false,
+            ),
             style: const TextStyle(
               fontSize: 16,
-              height: 1.7,
+              height: 1.35,        // antes 1.7
+              letterSpacing: 0.05, // antes 0.2
               color: Color(0xFF475569),
               fontWeight: FontWeight.w500,
-              letterSpacing: 0.2,
             ),
           ),
         ],
@@ -1134,7 +1173,7 @@ List<MapEntry<String, String>> _extractTop3FromText(String texto) {
   }
 }
 
-// LIQUID GLASS CARD HERO (para recomendación)
+// === LIQUID GLASS CARD HERO (para recomendación)
 class _LiquidGlassCard extends StatefulWidget {
   final Widget child;
   final Color borderColor;
@@ -1224,7 +1263,7 @@ class _LiquidGlassCardState extends State<_LiquidGlassCard>
   }
 }
 
-// COMPACT GLASS CARD (para las 3 cards inferiores)
+// === COMPACT GLASS CARD (para las 3 cards inferiores)
 class _CompactGlassCard extends StatefulWidget {
   final Widget child;
   final Color borderColor;
@@ -1363,7 +1402,7 @@ class _CompactGlassCardState extends State<_CompactGlassCard>
   }
 }
 
-// Painters (sin cambios)
+// === Painters (sin cambios visuales)
 class _TeacherPainter extends CustomPainter {
   final double t;
   _TeacherPainter(this.t);
