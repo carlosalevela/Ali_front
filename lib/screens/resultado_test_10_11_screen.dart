@@ -620,6 +620,7 @@ class _ResultadoTest1011ScreenState extends State<ResultadoTest1011Screen>
     );
   }
 
+  // CAMBIO AQUÍ: Ahora solo muestra la carrera #1
   Widget _buildExplicacionCardHero(bool isWide) {
     return _LiquidGlassCard(
       delay: 100,
@@ -641,7 +642,7 @@ class _ResultadoTest1011ScreenState extends State<ResultadoTest1011Screen>
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: FaIcon(
-                  FontAwesomeIcons.lightbulb,
+                  icono,
                   color: accentColor,
                   size: 24,
                 ),
@@ -649,7 +650,7 @@ class _ResultadoTest1011ScreenState extends State<ResultadoTest1011Screen>
               const SizedBox(width: 16),
               const Expanded(
                 child: Text(
-                  'Tu Recomendación Personalizada',
+                  'Tu Mejor Opción',
                   style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w900,
@@ -660,15 +661,87 @@ class _ResultadoTest1011ScreenState extends State<ResultadoTest1011Screen>
               ),
             ],
           ),
-          const SizedBox(height: 20),
-          Text(
-            explicacion,
-            style: const TextStyle(
-              fontSize: 16,
-              height: 1.7,
-              color: Color(0xFF475569),
-              fontWeight: FontWeight.w500,
-              letterSpacing: 0.2,
+          const SizedBox(height: 24),
+          // Mostrar solo el nombre de la carrera #1
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      accentColor.withOpacity(0.2),
+                      accentColor.withOpacity(0.1),
+                    ],
+                  ),
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    '1',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: accentColor,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  carreraLabel,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    height: 1.4,
+                    color: Color(0xFF1E3A8A),
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ),
+              Text(
+                '95%',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: accentColor,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: accentColor.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: accentColor.withOpacity(0.15),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.check_circle_outline,
+                  color: accentColor,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Esta carrera se ajusta perfectamente a tus intereses y habilidades',
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.5,
+                      color: Color(0xFF475569),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -676,13 +749,14 @@ class _ResultadoTest1011ScreenState extends State<ResultadoTest1011Screen>
     );
   }
 
+  // CAMBIO AQUÍ: Título cambiado a "Conoce tu Top 3"
   Widget _buildTopCarrerasCard() {
     return _CompactGlassCard(
       delay: 200,
       borderColor: const Color(0xFF8B5CF6),
       icon: FontAwesomeIcons.medal,
       iconColor: const Color(0xFF8B5CF6),
-      title: 'Top 3 Carreras',
+      title: 'Conoce tu Top 3',
       child: Column(
         children: topCarreras.take(3).map((carrera) {
           final index = topCarreras.indexOf(carrera);
