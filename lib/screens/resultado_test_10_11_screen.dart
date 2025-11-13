@@ -95,28 +95,63 @@ class _ResultadoTest1011ScreenState extends State<ResultadoTest1011Screen>
     };
   }
 
-  void _generarTopCarreras() {
-    topCarreras = [
-      {
-        'nombre': carreraLabel,
-        'porcentaje': 95.0,
-        'color': accentColor,
-        'icono': icono,
-      },
-      {
-        'nombre': 'Carrera alternativa 1',
-        'porcentaje': 78.0,
-        'color': const Color(0xFF8B5CF6),
-        'icono': FontAwesomeIcons.lightbulb,
-      },
-      {
-        'nombre': 'Carrera alternativa 2',
-        'porcentaje': 65.0,
-        'color': const Color(0xFFEC4899),
-        'icono': FontAwesomeIcons.star,
-      },
-    ];
+    void _generarTopCarreras() {
+  // Extraer Top-3 desde el texto del backend
+  final top3Extraido = _extractTop3FromText(widget.resultado);
+  
+  final colores = [
+    accentColor,  // Color principal para la carrera #1
+    const Color(0xFF8B5CF6),  // Púrpura para #2
+    const Color(0xFFEC4899),  // Rosa para #3
+  ];
+  
+  final iconos = [
+    icono,  // Icono principal para la carrera #1
+    FontAwesomeIcons.lightbulb,
+    FontAwesomeIcons.star,
+  ];
+  
+  topCarreras = [];
+  for (int i = 0; i < top3Extraido.length && i < 3; i++) {
+    final entry = top3Extraido[i];
+    final nombre = entry.key;
+    final scoreStr = entry.value;
+    
+    // Convertir el score (0.58) a porcentaje (58%)
+    double porcentaje = 0.0;
+    try {
+      final scoreNum = double.parse(scoreStr);
+      porcentaje = scoreNum * 100;  // 0.58 -> 58.0
+    } catch (_) {
+      porcentaje = 0.0;
+    }
+    
+    topCarreras.add({
+      'nombre': nombre,
+      'porcentaje': porcentaje,
+      'color': colores[i],
+      'icono': iconos[i],
+    });
   }
+}
+
+// ✅ Agregar este método para extraer el Top-3
+List<MapEntry<String, String>> _extractTop3FromText(String texto) {
+  final re = RegExp(r'Top-3:\s*(.+)', caseSensitive: false);
+  final m = re.firstMatch(texto);
+  if (m == null) return [];
+  final listRaw = m.group(1)!;
+  final parts = listRaw.split(',');
+  final out = <MapEntry<String, String>>[];
+  for (final p in parts.take(3)) {
+    final t = p.trim();
+    final name = t.replaceAll(RegExp(r'\([^\)]*\)'), '').trim();
+    final score = RegExp(r'\(([^)]*)\)').firstMatch(t)?.group(1) ?? '';
+    if (name.isNotEmpty) out.add(MapEntry(name, score));
+  }
+  return out;
+}
+
 
   String _pretty(String s) {
     if (s.contains(RegExp(r'[ÃÂ]'))) {
