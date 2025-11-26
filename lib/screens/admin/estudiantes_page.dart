@@ -68,34 +68,75 @@ class _EstudiantesPageState extends State<EstudiantesPage> {
     }
   }
 
+  // ⭐ MÉTODO CORREGIDO
   Future<void> _cargarProgresoTodos() async {
     setState(() => _cargandoProgreso = true);
     try {
+      int contador = 0;
+      // Procesar todos los estudiantes (no solo filtrados)
       for (var estudiante in _todosEstudiantes) {
         final grado = estudiante['grado'];
+        
         if (grado == 9) {
-          final info = await _api.progresoUsuarioGrado9(
-            estudiante['id'],
-            total: kTotalPreguntas9,
-          );
-          estudiante['progreso'] = info['progreso'] ?? '—';
-          estudiante['ultimaRecomendacion'] = info['ultimaRecomendacion'] ?? '—';
+          try {
+            final info = await _api.progresoUsuarioGrado9(
+              estudiante['id'],
+              total: kTotalPreguntas9,
+            );
+            estudiante['progreso'] = info['progreso'] ?? '—';
+            estudiante['ultimaRecomendacion'] = info['ultimaRecomendacion'] ?? '—';
+          } catch (e) {
+            debugPrint('Error cargando progreso estudiante ${estudiante['id']}: $e');
+            estudiante['progreso'] = 'Error al cargar';
+            estudiante['ultimaRecomendacion'] = '—';
+          }
         } else if (grado == 10 || grado == 11) {
-          final info = await _api.progresoUsuarioGrado10y11(
-            estudiante['id'],
-            total: kTotalPreguntas10y11,
-          );
-          estudiante['progreso'] = info['progreso'] ?? '—';
-          estudiante['ultimaRecomendacion'] = info['ultimaRecomendacion'] ?? '—';
+          try {
+            final info = await _api.progresoUsuarioGrado10y11(
+              estudiante['id'],
+              total: kTotalPreguntas10y11,
+            );
+            estudiante['progreso'] = info['progreso'] ?? '—';
+            estudiante['ultimaRecomendacion'] = info['ultimaRecomendacion'] ?? '—';
+          } catch (e) {
+            debugPrint('Error cargando progreso estudiante ${estudiante['id']}: $e');
+            estudiante['progreso'] = 'Error al cargar';
+            estudiante['ultimaRecomendacion'] = '—';
+          }
+        }
+        
+        contador++;
+        
+        // Actualizar UI cada 10 estudiantes para mostrar progreso visual
+        if (contador % 10 == 0 && mounted) {
+          setState(() {});
         }
       }
-      setState(() {
-        _cargandoProgreso = false;
-        _aplicarFiltros();
-      });
+      
+      if (mounted) {
+        setState(() {
+          _cargandoProgreso = false;
+          _aplicarFiltros(); // Refrescar filtros
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Progreso cargado: $contador estudiantes procesados'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
     } catch (e) {
-      debugPrint('Error cargando progreso: $e');
-      setState(() => _cargandoProgreso = false);
+      debugPrint('Error general cargando progreso: $e');
+      if (mounted) {
+        setState(() => _cargandoProgreso = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al cargar progreso: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
