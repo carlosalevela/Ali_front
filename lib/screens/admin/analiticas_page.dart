@@ -61,8 +61,8 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
       final est11 = estudiantes.where((e) => e['grado'] == 11).length;
 
       // Cargar tests
-      final tests9 = await _api.fetchTestsGrado9(estado: null, orden: null, limit: 2000, offset: 0);
-      final tests1011 = await _api.fetchTestsGrado10y11(estado: null, orden: null, limit: 2000, offset: 0);
+      final tests9 = await _api.fetchTestsGrado9(limit: 2000, offset: 0);
+      final tests1011 = await _api.fetchTestsGrado10y11(limit: 2000, offset: 0);
 
       // Filtrar por rango
       final tests9Filtrados = tests9.where((t) => _enRango(t)).toList();
@@ -83,12 +83,10 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
           .toList()
         ..sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
 
-      // Por carrera (10/11)
+      // ⭐ CORREGIDO: Por carrera usando _parseCarrera
       final Map<String, int> carCounts = {};
       for (final t in fin1011) {
-        final car = (t['resultado']?.toString().trim().isEmpty ?? true)
-            ? 'Desconocido'
-            : t['resultado'].toString().trim();
+        final car = _parseCarrera(t['resultado']?.toString());
         carCounts[car] = (carCounts[car] ?? 0) + 1;
       }
       final carList = carCounts.entries
@@ -158,6 +156,28 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
     for (final op in ['Industrial', 'Comercio', 'Promoción Social', 'Agropecuaria']) {
       if (raw.contains(op)) return op;
     }
+    return 'Desconocido';
+  }
+
+  // ⭐ NUEVO MÉTODO: Parsear carreras universitarias
+  String _parseCarrera(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return 'Desconocido';
+    
+    // Buscar "Carrera sugerida por ALI: XXXXX"
+    const tag = 'Carrera sugerida por ALI:';
+    final i = raw.indexOf(tag);
+    if (i >= 0) {
+      final rest = raw.substring(i + tag.length).trim();
+      // Tomar solo la primera línea (antes del salto de línea o "Top-3:")
+      final lines = rest.split(RegExp(r'[\n\r]|Top-3:'));
+      final carrera = lines.first.trim();
+      if (carrera.isNotEmpty) return carrera;
+    }
+    
+    // Si no encuentra el tag, devolver la primera línea del texto
+    final firstLine = raw.split(RegExp(r'[\n\r]')).first.trim();
+    if (firstLine.isNotEmpty && !firstLine.contains('¡Hola!')) return firstLine;
+    
     return 'Desconocido';
   }
 
@@ -314,6 +334,7 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
     );
   }
 
+  // ⭐ MEJORADA: Tab de tendencias con gráfica más visual
   Widget _buildTendenciasTab() {
     final porDia = _data['porDia'] as List<Map<String, dynamic>>;
     
@@ -327,16 +348,41 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Tests Finalizados por Día', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Tests Finalizados por Día', 
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    if (porDia.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          'Total: ${porDia.fold<int>(0, (sum, item) => sum + (item['count'] as int))} tests',
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blue),
+                        ),
+                      ),
+                  ],
+                ),
                 const SizedBox(height: 20),
                 SizedBox(
-                  height: 300,
+                  height: 400,
                   child: porDia.isEmpty
-                      ? const Center(child: Text('Sin datos en el rango seleccionado', style: TextStyle(color: Colors.grey)))
-                      : CustomPaint(
-                          painter: LineChartPainter(porDia),
-                          child: Container(),
-                        ),
+                      ? const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.insights, size: 64, color: Colors.grey),
+                              SizedBox(height: 16),
+                              Text('Sin datos en el rango seleccionado', 
+                                  style: TextStyle(color: Colors.grey, fontSize: 16)),
+                            ],
+                          ),
+                        )
+                      : ImprovedLineChart(data: porDia),
                 ),
               ],
             ),
@@ -362,13 +408,15 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
               child: Icon(icon, size: 32, color: color),
             ),
             const SizedBox(width: 16),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(value, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
-                Text(label, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
-              ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(value, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+                  Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600]), maxLines: 2),
+                ],
+              ),
             ),
           ],
         ),
@@ -492,29 +540,130 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
   }
 }
 
-// Simple line chart painter
-class LineChartPainter extends CustomPainter {
+// ⭐ NUEVA: Gráfica de línea mejorada y más visual
+class ImprovedLineChart extends StatelessWidget {
   final List<Map<String, dynamic>> data;
 
-  LineChartPainter(this.data);
+  const ImprovedLineChart({super.key, required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: ImprovedLineChartPainter(data),
+      child: Container(),
+    );
+  }
+}
+
+class ImprovedLineChartPainter extends CustomPainter {
+  final List<Map<String, dynamic>> data;
+
+  ImprovedLineChartPainter(this.data);
 
   @override
   void paint(Canvas canvas, Size size) {
     if (data.isEmpty) return;
 
-    final paint = Paint()
-      ..color = Colors.blue
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-
-    final pointPaint = Paint()
-      ..color = Colors.blue
-      ..style = PaintingStyle.fill;
-
     final maxValue = data.map((e) => e['count'] as int).reduce((a, b) => a > b ? a : b);
-    final padding = 40.0;
+    final padding = 60.0;
     final chartWidth = size.width - padding * 2;
     final chartHeight = size.height - padding * 2;
+
+    // Fondo con grid
+    _drawGrid(canvas, size, padding, chartWidth, chartHeight, maxValue);
+
+    // Área bajo la curva (gradiente)
+    _drawAreaUnderCurve(canvas, size, padding, chartWidth, chartHeight, maxValue);
+
+    // Línea principal
+    _drawLine(canvas, size, padding, chartWidth, chartHeight, maxValue);
+
+    // Puntos y valores
+    _drawPointsAndLabels(canvas, size, padding, chartWidth, chartHeight, maxValue);
+
+    // Etiquetas de fechas (eje X)
+    _drawDateLabels(canvas, size, padding, chartWidth);
+  }
+
+  void _drawGrid(Canvas canvas, Size size, double padding, double chartWidth, double chartHeight, int maxValue) {
+    final gridPaint = Paint()
+      ..color = Colors.grey[200]!
+      ..strokeWidth = 1;
+
+    // Líneas horizontales
+    for (int i = 0; i <= 5; i++) {
+      final y = size.height - padding - (chartHeight / 5) * i;
+      canvas.drawLine(
+        Offset(padding, y),
+        Offset(size.width - padding, y),
+        gridPaint,
+      );
+
+      // Etiqueta del eje Y
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: '${(maxValue / 5 * i).round()}',
+          style: const TextStyle(color: Colors.grey, fontSize: 11),
+        ),
+        textDirection: ui.TextDirection.ltr,
+      )..layout();
+      
+      textPainter.paint(canvas, Offset(padding - textPainter.width - 8, y - textPainter.height / 2));
+    }
+
+    // Ejes principales
+    final axisPaint = Paint()
+      ..color = Colors.grey[400]!
+      ..strokeWidth = 2;
+    
+    canvas.drawLine(
+      Offset(padding, size.height - padding),
+      Offset(size.width - padding, size.height - padding),
+      axisPaint,
+    );
+    canvas.drawLine(
+      Offset(padding, padding),
+      Offset(padding, size.height - padding),
+      axisPaint,
+    );
+  }
+
+  void _drawAreaUnderCurve(Canvas canvas, Size size, double padding, double chartWidth, double chartHeight, int maxValue) {
+    final path = Path();
+    path.moveTo(padding, size.height - padding);
+
+    for (int i = 0; i < data.length; i++) {
+      final x = padding + (chartWidth / (data.length - 1)) * i;
+      final y = size.height - padding - (chartHeight * (data[i]['count'] as int) / maxValue);
+      
+      if (i == 0) {
+        path.lineTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+
+    path.lineTo(size.width - padding, size.height - padding);
+    path.close();
+
+    final gradientPaint = Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(0, padding),
+        Offset(0, size.height - padding),
+        [Colors.blue.withOpacity(0.3), Colors.blue.withOpacity(0.05)],
+      )
+      ..style = PaintingStyle.fill;
+
+    canvas.drawPath(path, gradientPaint);
+  }
+
+  void _drawLine(Canvas canvas, Size size, double padding, double chartWidth, double chartHeight, int maxValue) {
+    final linePaint = Paint()
+      ..color = Colors.blue
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
 
     final path = Path();
     for (int i = 0; i < data.length; i++) {
@@ -526,18 +675,73 @@ class LineChartPainter extends CustomPainter {
       } else {
         path.lineTo(x, y);
       }
-
-      canvas.drawCircle(Offset(x, y), 4, pointPaint);
     }
 
-    canvas.drawPath(path, paint);
+    canvas.drawPath(path, linePaint);
+  }
 
-    // Draw axes
-    final axisPaint = Paint()
-      ..color = Colors.grey[300]!
-      ..strokeWidth = 1;
-    canvas.drawLine(Offset(padding, size.height - padding), Offset(size.width - padding, size.height - padding), axisPaint);
-    canvas.drawLine(Offset(padding, padding), Offset(padding, size.height - padding), axisPaint);
+  void _drawPointsAndLabels(Canvas canvas, Size size, double padding, double chartWidth, double chartHeight, int maxValue) {
+    final pointPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+
+    final pointBorderPaint = Paint()
+      ..color = Colors.blue
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke;
+
+    for (int i = 0; i < data.length; i++) {
+      final x = padding + (chartWidth / (data.length - 1)) * i;
+      final y = size.height - padding - (chartHeight * (data[i]['count'] as int) / maxValue);
+      final count = data[i]['count'] as int;
+
+      // Punto
+      canvas.drawCircle(Offset(x, y), 6, pointPaint);
+      canvas.drawCircle(Offset(x, y), 6, pointBorderPaint);
+
+      // Valor encima del punto
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: '$count',
+          style: const TextStyle(
+            color: Colors.blue,
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        textDirection: ui.TextDirection.ltr,
+      )..layout();
+
+      textPainter.paint(
+        canvas,
+        Offset(x - textPainter.width / 2, y - textPainter.height - 12),
+      );
+    }
+  }
+
+  void _drawDateLabels(Canvas canvas, Size size, double padding, double chartWidth) {
+    // Mostrar solo algunas fechas para no saturar
+    final step = (data.length / 6).ceil().clamp(1, data.length);
+    
+    for (int i = 0; i < data.length; i += step) {
+      final x = padding + (chartWidth / (data.length - 1)) * i;
+      final dateStr = data[i]['date'] as String;
+      final date = DateTime.parse(dateStr);
+      final label = DateFormat('dd MMM', 'es').format(date);
+
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: const TextStyle(color: Colors.grey, fontSize: 10),
+        ),
+        textDirection: ui.TextDirection.ltr,
+      )..layout();
+
+      textPainter.paint(
+        canvas,
+        Offset(x - textPainter.width / 2, size.height - padding + 10),
+      );
+    }
   }
 
   @override

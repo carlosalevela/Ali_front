@@ -46,8 +46,8 @@ class _DashboardPageState extends State<DashboardPage> {
       final grado11 = estudiantes.where((e) => e['grado'] == 11).length;
 
       // Obtener tests finalizados
-      final tests9 = await _api.fetchTestsGrado9(estado: 'FINALIZADO', orden: null, limit: 100, offset: 0);
-      final tests1011 = await _api.fetchTestsGrado10y11(estado: 'FINALIZADO', orden: null, limit: 100, offset: 0);
+      final tests9 = await _api.fetchTestsGrado9(estado: 'FINALIZADO', limit: 100, offset: 0);
+      final tests1011 = await _api.fetchTestsGrado10y11(estado: 'FINALIZADO', limit: 100, offset: 0);
 
       // Top técnicos
       final Map<String, int> tecCounts = {};
@@ -60,12 +60,10 @@ class _DashboardPageState extends State<DashboardPage> {
           .toList()
         ..sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
 
-      // Top carreras
+      // ⭐ CORREGIDO: Top carreras usando _parseCarrera
       final Map<String, int> carCounts = {};
       for (final t in tests1011) {
-        final car = (t['resultado']?.toString().trim().isEmpty ?? true)
-            ? 'Desconocido'
-            : t['resultado'].toString().trim();
+        final car = _parseCarrera(t['resultado']?.toString());
         carCounts[car] = (carCounts[car] ?? 0) + 1;
       }
       final carList = carCounts.entries
@@ -105,6 +103,28 @@ class _DashboardPageState extends State<DashboardPage> {
     for (final op in ['Industrial', 'Comercio', 'Promoción Social', 'Agropecuaria']) {
       if (raw.contains(op)) return op;
     }
+    return 'Desconocido';
+  }
+
+  // ⭐ NUEVO MÉTODO: Parsear carreras universitarias
+  String _parseCarrera(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return 'Desconocido';
+    
+    // Buscar "Carrera sugerida por ALI: XXXXX"
+    const tag = 'Carrera sugerida por ALI:';
+    final i = raw.indexOf(tag);
+    if (i >= 0) {
+      final rest = raw.substring(i + tag.length).trim();
+      // Tomar solo la primera línea (antes del salto de línea o "Top-3:")
+      final lines = rest.split(RegExp(r'[\n\r]|Top-3:'));
+      final carrera = lines.first.trim();
+      if (carrera.isNotEmpty) return carrera;
+    }
+    
+    // Si no encuentra el tag, devolver la primera línea del texto
+    final firstLine = raw.split(RegExp(r'[\n\r]')).first.trim();
+    if (firstLine.isNotEmpty && !firstLine.contains('¡Hola!')) return firstLine;
+    
     return 'Desconocido';
   }
 
