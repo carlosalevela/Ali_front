@@ -1,18 +1,11 @@
 // admin_dashboard.dart
 //
-// ✅ ACTUALIZADO 24-Jul-2025 — Analíticas PRO (barras + exportación PNG/Excel)
-//  • Analíticas: gráficas profesionales y selector de rango.
-//  • Exportación selectiva a PNG (totales, faltantes por grado, finalizaciones por día).
-//  • Fix: esperar frame + render temporal en overlay para PNG.
-//  • BottomSheet scrollable sin overflow y con margen superior.
-//  • Se mantiene la lógica existente fuera de Analíticas.
+// ✅ Limpio de exportar PNG/PDF, solo se mantiene exportación a Excel.
 //
 // ignore_for_file: depend_on_referenced_packages
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'dart:async'; // <<< LIVE PROGRESS (polling)
-import 'package:flutter/rendering.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -64,7 +57,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   List<Map<String, dynamic>> _car = []; // Carreras (10/11)
   bool _loadingStats = false;
 
-  // ── Analíticas (nuevo) ────────────────────────────────────────
+  // ── Analíticas ────────────────────────────────────────────────
   bool _analyticsLoading = false;
   bool _analyticsLoadedOnce = false;
   DateTimeRange? _analyticsRange;
@@ -82,11 +75,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
     'finishesByDay': <Map<String, dynamic>>[],
   };
 
-  // Keys para exportar PNG visibles
-  final GlobalKey _keyTotales = GlobalKey();
-  final GlobalKey _keyEstado = GlobalKey();
-  final GlobalKey _keyByDay = GlobalKey();
-
   // ── LIVE PROGRESS (polling) ───────────────────────────────────
   Timer? _liveTimer;
   final Duration _liveEvery = const Duration(seconds: 10);
@@ -94,12 +82,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   String _fmtProgreso(Map<String, dynamic> t, {required int total}) {
     final estado = t['estado']?.toString() ?? '';
-    final resp   = (t['respondidas'] as num?)?.toInt() ?? 0;
-    final ult    = (t['ultima_pregunta'] as num?)?.toInt() ?? 0;
-    final pct    = (t['progreso_pct'] as num?)?.toDouble() ?? (total > 0 ? (resp / total) * 100 : 0);
+    final resp = (t['respondidas'] as num?)?.toInt() ?? 0;
+    final ult = (t['ultima_pregunta'] as num?)?.toInt() ?? 0;
+    final pct = (t['progreso_pct'] as num?)?.toDouble() ??
+        (total > 0 ? (resp / total) * 100 : 0);
 
     if (estado == 'FINALIZADO') return 'Finalizado';
-    if (estado == 'EN_PROGRESO') return 'En progreso: $resp/$total (P$ult) ${pct.toStringAsFixed(0)}%';
+    if (estado == 'EN_PROGRESO') {
+      return 'En progreso: $resp/$total (P$ult) ${pct.toStringAsFixed(0)}%';
+    }
     return '—';
   }
 
@@ -125,14 +116,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
         offset: 0,
       );
       final Map<int, Map<String, dynamic>> m9 = {
-        for (final t in feed9) (t['usuario'] as num).toInt(): t as Map<String, dynamic>
+        for (final t in feed9)
+          (t['usuario'] as num).toInt(): t as Map<String, dynamic>
       };
 
       for (final al in estudiantesPorGrado['9']!) {
         final uid = (al['id'] as num).toInt();
         final testEnProg = m9[uid];
         if (testEnProg != null) {
-          final nuevo = _fmtProgreso(testEnProg, total: kTotalPreguntas9); // ← 57 para 9°
+          final nuevo =
+              _fmtProgreso(testEnProg, total: kTotalPreguntas9); // 57 para 9°
           if (al['progreso'] != nuevo) {
             setState(() => al['progreso'] = nuevo);
           }
@@ -142,12 +135,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
             final testsUsr = await apiService.fetchTestsGrado9PorUsuario(uid);
             if (testsUsr.isNotEmpty) {
               final last = Map<String, dynamic>.from(testsUsr.first);
-              final est = (last['estado'] ?? '').toString().toUpperCase();
+              final est =
+                  (last['estado'] ?? '').toString().toUpperCase();
               if (est == 'FINALIZADO') {
-                final det = await apiService.fetchResultadoTest9PorId((last['id'] as num).toInt());
+                final det = await apiService
+                    .fetchResultadoTest9PorId((last['id'] as num).toInt());
                 setState(() {
                   al['progreso'] = 'Finalizado';
-                  al['ultimaRecomendacion'] = det['resultado'] ?? al['ultimaRecomendacion'] ?? '—';
+                  al['ultimaRecomendacion'] =
+                      det['resultado'] ?? al['ultimaRecomendacion'] ?? '—';
                 });
               } else {
                 setState(() => al['progreso'] = '—');
@@ -165,30 +161,39 @@ class _AdminDashboardState extends State<AdminDashboard> {
         offset: 0,
       );
       final Map<int, Map<String, dynamic>> m1011 = {
-        for (final t in feed1011) (t['usuario'] as num).toInt(): t as Map<String, dynamic>
+        for (final t in feed1011)
+          (t['usuario'] as num).toInt(): t as Map<String, dynamic>
       };
 
-      final list1011 = [...estudiantesPorGrado['10']!, ...estudiantesPorGrado['11']!];
+      final list1011 = [
+        ...estudiantesPorGrado['10']!,
+        ...estudiantesPorGrado['11']!
+      ];
       for (final al in list1011) {
         final uid = (al['id'] as num).toInt();
         final testEnProg = m1011[uid];
         if (testEnProg != null) {
-          final nuevo = _fmtProgreso(testEnProg, total: kTotalPreguntas10y11); // ← 40 para 10/11
+          final nuevo = _fmtProgreso(
+              testEnProg, total: kTotalPreguntas10y11); // 40 para 10/11
           if (al['progreso'] != nuevo) {
             setState(() => al['progreso'] = nuevo);
           }
         } else {
           final old = (al['progreso'] ?? '').toString();
           if (old.startsWith('En progreso')) {
-            final testsUsr = await apiService.fetchTestsGrado10y11PorUsuario(uid);
+            final testsUsr =
+                await apiService.fetchTestsGrado10y11PorUsuario(uid);
             if (testsUsr.isNotEmpty) {
               final last = Map<String, dynamic>.from(testsUsr.first);
-              final est = (last['estado'] ?? '').toString().toUpperCase();
+              final est =
+                  (last['estado'] ?? '').toString().toUpperCase();
               if (est == 'FINALIZADO') {
-                final det = await apiService.fetchResultadoTest10y11PorId((last['id'] as num).toInt());
+                final det = await apiService
+                    .fetchResultadoTest10y11PorId((last['id'] as num).toInt());
                 setState(() {
                   al['progreso'] = 'Finalizado';
-                  al['ultimaRecomendacion'] = det['resultado'] ?? al['ultimaRecomendacion'] ?? '—';
+                  al['ultimaRecomendacion'] =
+                      det['resultado'] ?? al['ultimaRecomendacion'] ?? '—';
                 });
               } else {
                 setState(() => al['progreso'] = '—');
@@ -209,14 +214,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
   void initState() {
     super.initState();
     _verificarPermiso();
-    _searchController.addListener(() => setState(() => _searchTerm = _searchController.text));
+    _searchController
+        .addListener(() => setState(() => _searchTerm = _searchController.text));
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     _scrollController.dispose();
-    _stopLiveWatch(); // <<< LIVE PROGRESS (polling)
+    _stopLiveWatch();
     super.dispose();
   }
 
@@ -236,7 +242,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
     try {
       final usuarios = await apiService.fetchUsuarios();
 
-      // Para cada usuario estudiante, solo se consulta UNA vez el progreso
       Future<Map<String, dynamic>> _enriquecer(Map<String, dynamic> u) async {
         final usr = Map<String, dynamic>.from(u);
         usr['estado'] = usr['estado'] ?? 'Activo';
@@ -266,13 +271,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
         return usr;
       }
 
-      administradores = usuarios.where((u) => u['rol'] == 'admin').toList();
+      administradores =
+          usuarios.where((u) => u['rol'] == 'admin').toList();
 
-      final est9  = usuarios.where((u) => u['rol'] == 'estudiante' && u['grado'] == 9).toList();
-      final est10 = usuarios.where((u) => u['rol'] == 'estudiante' && u['grado'] == 10).toList();
-      final est11 = usuarios.where((u) => u['rol'] == 'estudiante' && u['grado'] == 11).toList();
+      final est9 = usuarios
+          .where((u) => u['rol'] == 'estudiante' && u['grado'] == 9)
+          .toList();
+      final est10 = usuarios
+          .where((u) => u['rol'] == 'estudiante' && u['grado'] == 10)
+          .toList();
+      final est11 = usuarios
+          .where((u) => u['rol'] == 'estudiante' && u['grado'] == 11)
+          .toList();
 
-      estudiantesPorGrado['9']  = await Future.wait(est9.map(_enriquecer));
+      estudiantesPorGrado['9'] = await Future.wait(est9.map(_enriquecer));
       estudiantesPorGrado['10'] = await Future.wait(est10.map(_enriquecer));
       estudiantesPorGrado['11'] = await Future.wait(est11.map(_enriquecer));
     } catch (e) {
@@ -280,8 +292,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
-        _cargarEstadisticas(); // dashboard 9/10/11 técnicos/carreras
-        _startLiveWatch();     // <<< LIVE PROGRESS (polling) — arranca después de cargar
+        _cargarEstadisticas();
+        _startLiveWatch();
       }
     }
   }
@@ -327,13 +339,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: n, decoration: const InputDecoration(labelText: 'Nombre')),
-            TextField(controller: e, decoration: const InputDecoration(labelText: 'Email')),
-            TextField(controller: g, decoration: const InputDecoration(labelText: 'Grado')),
+            TextField(
+                controller: n,
+                decoration: const InputDecoration(labelText: 'Nombre')),
+            TextField(
+                controller: e,
+                decoration: const InputDecoration(labelText: 'Email')),
+            TextField(
+                controller: g,
+                decoration: const InputDecoration(labelText: 'Grado')),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar')),
           ElevatedButton(
             onPressed: () async {
               final ok = await apiService.editarUsuario(u['id'], {
@@ -360,8 +380,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
         title: const Text('¿Eliminar?'),
         content: const Text('Esta acción no se puede deshacer.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Eliminar')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar')),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Eliminar')),
         ],
       ),
     );
@@ -376,7 +400,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final ex.Excel wb = ex.Excel.createExcel();
     final ex.Sheet sh = wb['Estudiantes'];
 
-    sh.appendRow(['ID', 'Nombre', 'Email', 'Grado', 'Estado', 'Progreso', 'Recomendación']);
+    sh.appendRow(
+        ['ID', 'Nombre', 'Email', 'Grado', 'Estado', 'Progreso', 'Recomendación']);
     for (final a in alumnos) {
       sh.appendRow([
         a['id'] ?? '',
@@ -428,11 +453,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
         children: [
           ListTile(
             leading: Icon(ic, size: 20, color: act ? Colors.white : inactive),
-            title: Text(label, style: TextStyle(color: act ? Colors.white : inactive)),
+            title:
+                Text(label, style: TextStyle(color: act ? Colors.white : inactive)),
             tileColor: act ? activeBg : sidebarBg,
             onTap: () => _onSidebarTap(key, drop: drop),
             trailing: drop
-                ? Icon(_studentsDropdownOpen ? Icons.expand_less : Icons.expand_more, color: inactive)
+                ? Icon(_studentsDropdownOpen ? Icons.expand_less : Icons.expand_more,
+                    color: inactive)
                 : null,
           ),
           if (key == 'students' && _studentsDropdownOpen)
@@ -442,7 +469,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 children: [
                   ListTile(
                     leading: const Icon(Icons.chevron_right, color: Colors.white),
-                    title: const Text('Grado 9°', style: TextStyle(color: Colors.white)),
+                    title: const Text('Grado 9°',
+                        style: TextStyle(color: Colors.white)),
                     onTap: () => setState(() {
                       _selectedStudentsGrade = '9';
                       _activeSection = 'students';
@@ -450,7 +478,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   ),
                   ListTile(
                     leading: const Icon(Icons.chevron_right, color: Colors.white),
-                    title: const Text('Grado 10/11', style: TextStyle(color: Colors.white)),
+                    title: const Text('Grado 10/11',
+                        style: TextStyle(color: Colors.white)),
                     onTap: () => setState(() {
                       _selectedStudentsGrade = '10';
                       _activeSection = 'students';
@@ -469,7 +498,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
       child: Column(
         children: [
           const SizedBox(height: 40),
-          const Text('ALI', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+          const Text('ALI',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold)),
           const SizedBox(height: 20),
           Expanded(
             child: ListView(
@@ -485,7 +518,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
           const Divider(color: Colors.white54),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.white),
-            title: const Text('Cerrar Sesión', style: TextStyle(color: Colors.white)),
+            title: const Text('Cerrar Sesión',
+                style: TextStyle(color: Colors.white)),
             onTap: () => Navigator.pushReplacementNamed(context, '/'),
           ),
           const SizedBox(height: 20),
@@ -510,7 +544,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
       ),
       child: Row(
         children: [
-          Expanded(child: Text(title, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold))),
+          Expanded(
+              child: Text(title,
+                  style: const TextStyle(
+                      fontSize: 24, fontWeight: FontWeight.bold))),
           if (_activeSection != 'dashboard')
             SizedBox(
               width: 300,
@@ -521,8 +558,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   hintText: 'Buscar...',
                   filled: true,
                   fillColor: const Color(0xFFF9FAFB),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: BorderSide.none),
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 0),
                 ),
               ),
             ),
@@ -533,7 +573,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  // ═════════════════════════════════ métricas para dashboard (igual)
+  // ═════════════════════════════════ métricas para dashboard
   List<Map<String, String>> _metricas(String gradeKey) {
     final est = _estudiantesGrado(gradeKey);
     final tot = est.length;
@@ -541,10 +581,30 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final pen = tot - fin;
     final pct = tot > 0 ? ((fin / tot) * 100).round() : 0;
     return [
-      {'title': 'Total Estudiantes', 'value': '$tot', 'subtitle': 'en este grado', 'trend': '+5%'},
-      {'title': 'Tests Completados', 'value': '$fin', 'subtitle': 'estudiantes', 'trend': '$pct%'},
-      {'title': 'Tests Pendientes', 'value': '$pen', 'subtitle': 'estudiantes', 'trend': '-2%'},
-      {'title': 'Tasa de Finalización', 'value': '$pct%', 'subtitle': 'del total', 'trend': '+8%'},
+      {
+        'title': 'Total Estudiantes',
+        'value': '$tot',
+        'subtitle': 'en este grado',
+        'trend': '+5%'
+      },
+      {
+        'title': 'Tests Completados',
+        'value': '$fin',
+        'subtitle': 'estudiantes',
+        'trend': '$pct%'
+      },
+      {
+        'title': 'Tests Pendientes',
+        'value': '$pen',
+        'subtitle': 'estudiantes',
+        'trend': '-2%'
+      },
+      {
+        'title': 'Tasa de Finalización',
+        'value': '$pct%',
+        'subtitle': 'del total',
+        'trend': '+8%'
+      },
     ];
   }
 
@@ -581,10 +641,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
       };
       for (final t in tests9) {
         final tec = _parseTecnico(t['resultado']?.toString());
-        if (cntTec.containsKey(tec)) cntTec[tec] = (cntTec[tec] ?? 0) + 1;
+        if (cntTec.containsKey(tec)) {
+          cntTec[tec] = (cntTec[tec] ?? 0) + 1;
+        }
       }
-      final tecList = cntTec.entries.map((e) => {'name': e.key, 'count': e.value}).toList()
-        ..sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
+      final tecList = cntTec.entries
+          .map((e) => {'name': e.key, 'count': e.value})
+          .toList()
+        ..sort((a, b) =>
+            (b['count'] as int).compareTo(a['count'] as int));
 
       final tests1011 = await apiService.fetchTestsGrado10y11(
         estado: 'FINALIZADO',
@@ -594,16 +659,23 @@ class _AdminDashboardState extends State<AdminDashboard> {
       );
       final Map<String, int> cntCar = {};
       for (final t in tests1011) {
-        final car = (t['resultado']?.toString().trim().isEmpty ?? true) ? 'Desconocido' : t['resultado'].toString().trim();
+        final car = (t['resultado']?.toString().trim().isEmpty ?? true)
+            ? 'Desconocido'
+            : t['resultado'].toString().trim();
         cntCar[car] = (cntCar[car] ?? 0) + 1;
       }
-      final carList = cntCar.entries.map((e) => {'name': e.key, 'count': e.value}).toList()
-        ..sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
+      final carList = cntCar.entries
+          .map((e) => {'name': e.key, 'count': e.value})
+          .toList()
+        ..sort((a, b) =>
+            (b['count'] as int).compareTo(a['count'] as int));
 
-      if (mounted) setState(() {
-        _tec = tecList;
-        _car = carList;
-      });
+      if (mounted) {
+        setState(() {
+          _tec = tecList;
+          _car = carList;
+        });
+      }
     } catch (e) {
       debugPrint('Error cargando estadísticas: $e');
     } finally {
@@ -621,9 +693,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
     return null;
   }
 
-  DateTime? _fin(Map<String, dynamic> t) => _parseDate(t['fecha_realizacion']);
+  DateTime? _fin(Map<String, dynamic> t) =>
+      _parseDate(t['fecha_realizacion']);
   DateTime? _ini(Map<String, dynamic> t) =>
-      _parseDate(t['fecha_inicio']) ?? _parseDate(t['fecha_ultima_actividad']);
+      _parseDate(t['fecha_inicio']) ??
+      _parseDate(t['fecha_ultima_actividad']);
 
   Future<void> _loadAnalytics({DateTimeRange? range}) async {
     setState(() {
@@ -652,7 +726,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
       bool inRange(Map<String, dynamic> t) {
         final pivot = _fin(t) ?? _ini(t);
         if (pivot == null) return false;
-        return !pivot.isBefore(_analyticsRange!.start) && !pivot.isAfter(_analyticsRange!.end);
+        return !pivot.isBefore(_analyticsRange!.start) &&
+            !pivot.isAfter(_analyticsRange!.end);
       }
 
       final tests9 = tests9All.where(inRange).toList();
@@ -660,7 +735,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
       bool isFinished(Map<String, dynamic> t) {
         final s = (t['estado'] ?? '').toString().toUpperCase();
-        return s == 'FINALIZADO' || s == 'FINALIZADOS' || s == 'COMPLETADO';
+        return s == 'FINALIZADO' ||
+            s == 'FINALIZADOS' ||
+            s == 'COMPLETADO';
       }
 
       final fin9 = tests9.where(isFinished).toList();
@@ -669,11 +746,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
       // 9° por técnico
       final tecCounts = <String, int>{};
       for (final t in fin9) {
-        final tec = _parseTecnico((t['resultado'] ?? '').toString());
+        final tec =
+            _parseTecnico((t['resultado'] ?? '').toString());
         tecCounts[tec] = (tecCounts[tec] ?? 0) + 1;
       }
-      final byTecnicoList = tecCounts.entries.map((e) => {'name': e.key, 'count': e.value}).toList()
-        ..sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
+      final byTecnicoList = tecCounts.entries
+          .map((e) => {'name': e.key, 'count': e.value})
+          .toList()
+        ..sort((a, b) =>
+            (b['count'] as int).compareTo(a['count'] as int));
 
       // 10/11 por carrera
       final carCounts = <String, int>{};
@@ -682,8 +763,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
         final car = raw.isEmpty ? 'Desconocido' : raw;
         carCounts[car] = (carCounts[car] ?? 0) + 1;
       }
-      final byCarreraList = carCounts.entries.map((e) => {'name': e.key, 'count': e.value}).toList()
-        ..sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
+      final byCarreraList = carCounts.entries
+          .map((e) => {'name': e.key, 'count': e.value})
+          .toList()
+        ..sort((a, b) =>
+            (b['count'] as int).compareTo(a['count'] as int));
 
       // Finalizaciones por día
       String pickDay(Map<String, dynamic> t) {
@@ -691,7 +775,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
         return DateFormat('yyyy-MM-dd').format(d);
       }
 
-      Map<String, int> _groupByDay(Iterable<Map<String, dynamic>> items) {
+      Map<String, int> _groupByDay(
+          Iterable<Map<String, dynamic>> items) {
         final m = <String, int>{};
         for (final t in items) {
           final k = pickDay(t);
@@ -710,7 +795,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
       final finishesByDayList = mergedDaysMap.entries
           .map((e) => {'date': e.key, 'count': e.value})
           .toList()
-        ..sort((a, b) => (a['date'] as String).compareTo(b['date'] as String));
+        ..sort((a, b) =>
+            (a['date'] as String).compareTo(b['date'] as String));
 
       // Duración promedio
       double avgSecs(Iterable<Map<String, dynamic>> tests) {
@@ -763,9 +849,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
     h1.appendRow(['Finalizados (9°)', s['finish9']]);
     h1.appendRow(['Finalizados (10/11)', s['finish1011']]);
     final avg9 = ((s['avgSecs9'] as num?) ?? 0).toDouble();
-    final avg1011 = ((s['avgSecs1011'] as num?) ?? 0).toDouble();
-    h1.appendRow(['Duración promedio 9° (min)', (avg9 / 60).toStringAsFixed(1)]);
-    h1.appendRow(['Duración promedio 10/11 (min)', (avg1011 / 60).toStringAsFixed(1)]);
+    final avg1011 =
+        ((s['avgSecs1011'] as num?) ?? 0).toDouble();
+    h1.appendRow(
+        ['Duración promedio 9° (min)', (avg9 / 60).toStringAsFixed(1)]);
+    h1.appendRow([
+      'Duración promedio 10/11 (min)',
+      (avg1011 / 60).toStringAsFixed(1)
+    ]);
 
     final ex.Sheet h2 = wb['Grado 9 - Técnicos'];
     h2.appendRow(['Técnico', 'Conteo']);
@@ -794,247 +885,27 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  // ═════════════════════════════════ exportar PNG (fix: espera frame)
-  Future<void> _saveChartPng(GlobalKey key, String filename) async {
-    final ctx = key.currentContext;
-    if (ctx == null) return;
-
-    await Future.delayed(const Duration(milliseconds: 16));
-    await WidgetsBinding.instance.endOfFrame;
-
-    final boundary = ctx.findRenderObject() as RenderRepaintBoundary?;
-    if (boundary == null) return;
-
-    if (boundary.debugNeedsPaint) {
-      await Future.delayed(const Duration(milliseconds: 16));
-      await WidgetsBinding.instance.endOfFrame;
-    }
-
-    final ui.Image image = await boundary.toImage(pixelRatio: 3);
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-    if (byteData == null) return;
-    final bytes = byteData.buffer.asUint8List();
-
-    await FileSaver.instance.saveFile(filename, bytes, 'png', mimeType: MimeType.PNG);
-  }
-
-  // Render temporal en overlay para PNG individuales
-  Future<void> _renderAndSaveTemporaryChart({
-    required Widget chart,
-    required String filename,
-    Size size = const Size(1200, 520),
-  }) async {
-    final key = GlobalKey();
-    final overlay = OverlayEntry(
-      builder: (ctx) => IgnorePointer(
-        ignoring: true,
-        child: Material(
-          type: MaterialType.transparency,
-          child: Center(
-            child: Opacity(
-              opacity: 0.01,
-              child: RepaintBoundary(
-                key: key,
-                child: SizedBox(width: size.width, height: size.height, child: chart),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    Overlay.of(context, rootOverlay: true).insert(overlay);
-    try {
-      await Future.delayed(const Duration(milliseconds: 20));
-      await WidgetsBinding.instance.endOfFrame;
-
-      final boundary = key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-      if (boundary == null) return;
-
-      final ui.Image image = await boundary.toImage(pixelRatio: 3);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData == null) return;
-      final bytes = byteData.buffer.asUint8List();
-
-      await FileSaver.instance.saveFile(filename, bytes, 'png', mimeType: MimeType.PNG);
-    } finally {
-      overlay.remove();
-    }
-  }
-
-  Widget _chartTotalSolo(String label, int total) {
-    return ChartCard(
-      title: 'Total $label',
-      child: BarChart(
-        bars: [BarGroup(label, [BarSerie('Total', [total])])],
-        stacked: false,
-        showLegend: false,
-      ),
-    );
-  }
-
-  Widget _chartFaltantesSolo(String label, int faltantes) {
-    return ChartCard(
-      title: 'Solo FALTANTES $label',
-      child: BarChart(
-        bars: [BarGroup(label, [BarSerie('Faltantes', [faltantes])])],
-        stacked: false,
-        showLegend: false,
-      ),
-    );
-  }
-
-  Future<void> _pickerExportarPng({
-    required int tot9,
-    required int tot10,
-    required int tot11,
-    required int fin9,
-    required int fin10,
-    required int fin11,
-    required int pen9,
-    required int pen10,
-    required int pen11,
-  }) async {
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).cardColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) {
-        final bottomInset = MediaQuery.of(ctx).viewInsets.bottom;
-        return SafeArea(
-          child: Padding(
-            padding: EdgeInsets.only(bottom: bottomInset, top: 12),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.90),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const ListTile(
-                      title: Text('Descargar gráficas (PNG)',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.bar_chart),
-                      title: const Text('Totales (9° + 10° + 11°)'),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        _saveChartPng(_keyTotales, 'totales_9_10_11.png');
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.bar_chart),
-                      title: const Text('Totales — solo 9°'),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        _renderAndSaveTemporaryChart(
-                          chart: _chartTotalSolo('9°', tot9),
-                          filename: 'totales_9.png',
-                        );
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.bar_chart),
-                      title: const Text('Totales — solo 10°'),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        _renderAndSaveTemporaryChart(
-                          chart: _chartTotalSolo('10°', tot10),
-                          filename: 'totales_10.png',
-                        );
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.bar_chart),
-                      title: const Text('Totales — solo 11°'),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        _renderAndSaveTemporaryChart(
-                          chart: _chartTotalSolo('11°', tot11),
-                          filename: 'totales_11.png',
-                        );
-                      },
-                    ),
-                    const Divider(),
-                    ListTile(
-                      leading: const Icon(Icons.stacked_bar_chart),
-                      title: const Text('Estado (terminados/pendientes) — 9° + 10° + 11°'),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        _saveChartPng(_keyEstado, 'estado_9_10_11.png');
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.info_outline),
-                      title: const Text('Solo FALTANTES — 9°'),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        _renderAndSaveTemporaryChart(
-                          chart: _chartFaltantesSolo('9°', pen9),
-                          filename: 'faltantes_9.png',
-                        );
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.info_outline),
-                      title: const Text('Solo FALTANTES — 10°'),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        _renderAndSaveTemporaryChart(
-                          chart: _chartFaltantesSolo('10°', pen10),
-                          filename: 'faltantes_10.png',
-                        );
-                      },
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.info_outline),
-                      title: const Text('Solo FALTANTES — 11°'),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        _renderAndSaveTemporaryChart(
-                          chart: _chartFaltantesSolo('11°', pen11),
-                          filename: 'faltantes_11.png',
-                        );
-                      },
-                    ),
-                    const Divider(),
-                    ListTile(
-                      leading: const Icon(Icons.calendar_month),
-                      title: const Text('Finalizaciones por día (rango actual)'),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        _saveChartPng(_keyByDay, 'finalizaciones_por_dia.png');
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // ═════════════════════════════════ dashboard (igual)
+  // ═════════════════════════════════ dashboard
   Widget _renderDashboard() {
     final grade = _selectedDashboardGrade;
     final metrics = _metricas(grade);
     final choices = grade == '9' ? _tec : _car;
-    final maxC = choices.isNotEmpty ? choices.map<int>((e) => e['count'] as int).reduce((a, b) => a > b ? a : b) : 1;
+    final maxC = choices.isNotEmpty
+        ? choices
+            .map<int>((e) => e['count'] as int)
+            .reduce((a, b) => a > b ? a : b)
+        : 1;
 
     final now = DateTime.now();
     final ini = DateTime(now.year, now.month, 1);
     final fin = DateTime(now.year, now.month + 1, 0);
-    final rango = '${DateFormat('d MMM', 'es').format(ini)} - ${DateFormat('d MMM yyyy', 'es').format(fin)}';
+    final rango =
+        '${DateFormat('d MMM', 'es').format(ini)} - ${DateFormat('d MMM yyyy', 'es').format(fin)}';
     final mesAn = DateFormat('MMMM yyyy', 'es').format(now);
 
     final progRaw = metrics[1]['trend'] ?? '0%';
-    final progVal = (double.tryParse(progRaw.replaceAll(RegExp(r'\D'), '')) ?? 0) / 100;
+    final progVal =
+        (double.tryParse(progRaw.replaceAll(RegExp(r'\D'), '')) ?? 0) / 100;
 
     final listaEst = _estudiantesGrado(grade);
 
@@ -1053,12 +924,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     padding: const EdgeInsets.only(right: 8),
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: sel ? const Color(0xFF0D4A8A) : Colors.transparent,
-                        foregroundColor: sel ? Colors.white : Colors.grey[700],
+                        backgroundColor: sel
+                            ? const Color(0xFF0D4A8A)
+                            : Colors.transparent,
+                        foregroundColor:
+                            sel ? Colors.white : Colors.grey[700],
                         side: const BorderSide(color: Color(0xFFD1D5DB)),
                         elevation: 0,
                       ),
-                      onPressed: () => setState(() => _selectedDashboardGrade = g),
+                      onPressed: () =>
+                          setState(() => _selectedDashboardGrade = g),
                       child: Text(g == '9' ? 'Grado 9°' : 'Bachillerato'),
                     ),
                   );
@@ -1066,9 +941,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
               ),
               Row(
                 children: [
-                  const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
+                  const Icon(Icons.calendar_today,
+                      size: 16, color: Colors.grey),
                   const SizedBox(width: 4),
-                  Text(rango, style: const TextStyle(color: Colors.grey)),
+                  Text(rango,
+                      style: const TextStyle(color: Colors.grey)),
                 ],
               ),
             ],
@@ -1078,7 +955,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
           // métricas
           GridView.count(
             shrinkWrap: true,
-            crossAxisCount: MediaQuery.of(context).size.width > 1200 ? 4 : 2,
+            crossAxisCount:
+                MediaQuery.of(context).size.width > 1200 ? 4 : 2,
             crossAxisSpacing: 16,
             mainAxisSpacing: 16,
             childAspectRatio: 3 / 2,
@@ -1089,19 +967,30 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment:
+                        MainAxisAlignment.spaceBetween,
                     children: [
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(m['title']!, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                          Text(m['title']!,
+                              style: const TextStyle(
+                                  color: Colors.grey, fontSize: 12)),
                           const SizedBox(height: 4),
-                          Text(m['value']!, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                          Text(m['value']!,
+                              style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold)),
                           const SizedBox(height: 2),
-                          Text(m['subtitle']!, style: const TextStyle(color: Colors.grey, fontSize: 10)),
+                          Text(m['subtitle']!,
+                              style: const TextStyle(
+                                  color: Colors.grey, fontSize: 10)),
                         ],
                       ),
-                      Text(m['trend']!, style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                      Text(m['trend']!,
+                          style: const TextStyle(
+                              color: Colors.green,
+                              fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ),
@@ -1123,25 +1012,43 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     child: Column(
                       children: [
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          mainAxisAlignment:
+                              MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(grade == '9' ? 'Técnicos Elegidos' : 'Carreras Elegidas',
-                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                            IconButton(icon: const Icon(Icons.refresh, size: 20), onPressed: _cargarEstadisticas),
+                            Text(
+                                grade == '9'
+                                    ? 'Técnicos Elegidos'
+                                    : 'Carreras Elegidas',
+                                style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold)),
+                            IconButton(
+                                icon: const Icon(Icons.refresh, size: 20),
+                                onPressed: _cargarEstadisticas),
                           ],
                         ),
-                        if (_loadingStats) const LinearProgressIndicator(minHeight: 2),
+                        if (_loadingStats)
+                          const LinearProgressIndicator(
+                              minHeight: 2),
                         const SizedBox(height: 12),
                         for (final ch in choices)
                           Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 8),
                             child: Row(
                               children: [
-                                SizedBox(width: 140, child: Text(ch['name'], style: const TextStyle(fontSize: 14))),
+                                SizedBox(
+                                    width: 140,
+                                    child: Text(ch['name'],
+                                        style: const TextStyle(
+                                            fontSize: 14))),
                                 const SizedBox(width: 16),
                                 Expanded(
                                   child: LinearProgressIndicator(
-                                    value: (maxC == 0 ? 0 : (ch['count'] as int) / maxC),
+                                    value: (maxC == 0
+                                        ? 0
+                                        : (ch['count'] as int) /
+                                            maxC),
                                     minHeight: 8,
                                   ),
                                 ),
@@ -1152,8 +1059,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           ),
                         if (choices.isEmpty && !_loadingStats)
                           const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 24),
-                            child: Text('Sin datos aún', style: TextStyle(color: Colors.grey)),
+                            padding:
+                                EdgeInsets.symmetric(vertical: 24),
+                            child: Text('Sin datos aún',
+                                style: TextStyle(color: Colors.grey)),
                           ),
                       ],
                     ),
@@ -1170,23 +1079,36 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         padding: const EdgeInsets.all(16),
                         child: Column(
                           children: [
-                            Text(mesAn, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                            Text(mesAn,
+                                style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold)),
                             const SizedBox(height: 12),
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceBetween,
                               children: List.generate(5, (idx) {
                                 const off = [-2, -1, 0, 1, 2];
                                 final now = DateTime.now();
                                 final d = off[idx] + now.day;
-                                final end = DateTime(now.year, now.month + 1, 0).day;
-                                final day = d < 1 ? 1 : (d > end ? end : d);
+                                final end = DateTime(now.year,
+                                        now.month + 1, 0)
+                                    .day;
+                                final day = d < 1
+                                    ? 1
+                                    : (d > end ? end : d);
                                 final isToday = day == now.day;
                                 return ElevatedButton(
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: isToday ? const Color(0xFF0D4A8A) : const Color(0xFFF9FAFB),
-                                    foregroundColor: isToday ? Colors.white : Colors.grey[700],
+                                    backgroundColor: isToday
+                                        ? const Color(0xFF0D4A8A)
+                                        : const Color(0xFFF9FAFB),
+                                    foregroundColor: isToday
+                                        ? Colors.white
+                                        : Colors.grey[700],
                                     elevation: 0,
-                                    minimumSize: const Size(32, 32),
+                                    minimumSize:
+                                        const Size(32, 32),
                                     padding: EdgeInsets.zero,
                                   ),
                                   onPressed: () {},
@@ -1206,14 +1128,22 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         child: Column(
                           children: [
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceBetween,
                               children: const [
-                                Text('Progreso de Tests', style: TextStyle(fontSize: 14, color: Colors.grey)),
-                                Text('+8.5% del mes pasado', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                Text('Progreso de Tests',
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey)),
+                                Text('+8.5% del mes pasado',
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey)),
                               ],
                             ),
                             const SizedBox(height: 12),
-                            LinearProgressIndicator(value: progVal, minHeight: 8),
+                            LinearProgressIndicator(
+                                value: progVal, minHeight: 8),
                           ],
                         ),
                       ),
@@ -1226,7 +1156,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
           const SizedBox(height: 24),
 
-          // tabla estudiantes (igual)
+          // tabla estudiantes
           Card(
             elevation: 2,
             child: Padding(
@@ -1234,24 +1164,33 @@ class _AdminDashboardState extends State<AdminDashboard> {
               child: Column(
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment:
+                        MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Estudiantes - ${grade == '9' ? 'Grado 9°' : '10/11'}',
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      Text(
+                          'Estudiantes - ${grade == '9' ? 'Grado 9°' : '10/11'}',
+                          style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold)),
                       Row(
                         children: [
-                          IconButton(icon: const Icon(Icons.refresh), onPressed: () => _cargarUsuarios()),
+                          IconButton(
+                              icon: const Icon(Icons.refresh),
+                              onPressed: () => _cargarUsuarios()),
                           IconButton(
                             icon: const Icon(Icons.download),
                             tooltip: 'Excel',
-                            onPressed: () => _exportarExcel(listaEst),
+                            onPressed: () =>
+                                _exportarExcel(listaEst),
                           ),
                           IconButton(
                             icon: const Icon(Icons.open_in_new),
                             onPressed: () => Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => UsuariosScreen(titulo: 'Estudiantes', usuarios: listaEst),
+                                builder: (_) => UsuariosScreen(
+                                    titulo: 'Estudiantes',
+                                    usuarios: listaEst),
                               ),
                             ),
                           ),
@@ -1273,30 +1212,51 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       rows: listaEst.map((e) {
                         final prog = e['progreso'] ?? 'N/A';
                         final estado = e['estado'] ?? 'Activo';
-                        final rec = e['ultimaRecomendacion'] ?? '—';
+                        final rec =
+                            e['ultimaRecomendacion'] ?? '—';
                         final chipEstado = GestureDetector(
                           onSecondaryTap: () => _toggleEstado(e),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: estado == 'Activo' ? Colors.green[100] : Colors.red[100],
-                              borderRadius: BorderRadius.circular(12),
+                              color: estado == 'Activo'
+                                  ? Colors.green[100]
+                                  : Colors.red[100],
+                              borderRadius:
+                                  BorderRadius.circular(12),
                             ),
                             child: Text(estado,
-                                style: TextStyle(color: estado == 'Activo' ? Colors.green : Colors.red)),
+                                style: TextStyle(
+                                    color: estado == 'Activo'
+                                        ? Colors.green
+                                        : Colors.red)),
                           ),
                         );
                         return DataRow(
-                          onSelectChanged: (_) => _abrirEstadisticas(e),
+                          onSelectChanged: (_) =>
+                              _abrirEstadisticas(e),
                           cells: [
-                            DataCell(Text(e['nombre'] ?? '—', maxLines: 1, overflow: TextOverflow.ellipsis)),
+                            DataCell(Text(
+                              e['nombre'] ?? '—',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            )),
                             DataCell(chipEstado),
                             DataCell(Text(rec)),
                             DataCell(Text(prog)),
                             DataCell(Row(
                               children: [
-                                IconButton(icon: const Icon(Icons.edit, size: 20), onPressed: () => _editarUsuario(e)),
-                                IconButton(icon: const Icon(Icons.delete, size: 20), onPressed: () => _eliminarUsuario(e['id'])),
+                                IconButton(
+                                    icon: const Icon(Icons.edit,
+                                        size: 20),
+                                    onPressed: () =>
+                                        _editarUsuario(e)),
+                                IconButton(
+                                    icon: const Icon(Icons.delete,
+                                        size: 20),
+                                    onPressed: () => _eliminarUsuario(
+                                        e['id'])),
                               ],
                             )),
                           ],
@@ -1313,15 +1273,17 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  // ═════════════════════════════════ estudiantes (igual)
+  // ═════════════════════════════════ estudiantes
   Widget _renderStudents() {
     final kGr = _selectedStudentsGrade == '9' ? '9' : '10';
     final al = kGr == '9'
         ? estudiantesPorGrado['9']!
-        : estudiantesPorGrado['10']! + estudiantesPorGrado['11']!;
+        : estudiantesPorGrado['10']! +
+            estudiantesPorGrado['11']!;
     final filt = al
-        .where((e) => ((e['nombre'] ?? '').toString().toLowerCase())
-            .contains(_searchTerm.toLowerCase()))
+        .where((e) =>
+            ((e['nombre'] ?? '').toString().toLowerCase())
+                .contains(_searchTerm.toLowerCase()))
         .toList();
 
     return SingleChildScrollView(
@@ -1330,10 +1292,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
       child: Column(
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            mainAxisAlignment:
+                MainAxisAlignment.spaceBetween,
             children: [
               const Text('Estudiantes Inscritos',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold)),
               Row(
                 children: [
                   ElevatedButton.icon(
@@ -1341,30 +1306,38 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     label: const Text('Excel'),
                     onPressed: () => _exportarExcel(filt),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1465BB),
+                      backgroundColor:
+                          const Color(0xFF1465BB),
                       foregroundColor: Colors.white,
                     ),
                   ),
                   const SizedBox(width: 12),
                   for (final g in ['9', '10/11'])
                     Padding(
-                      padding: const EdgeInsets.only(left: 8),
+                      padding:
+                          const EdgeInsets.only(left: 8),
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _selectedStudentsGrade ==
-                                  (g == '9' ? '9' : '10')
-                              ? const Color(0xFF0D4A8A)
-                              : Colors.transparent,
-                          foregroundColor: _selectedStudentsGrade ==
-                                  (g == '9' ? '9' : '10')
-                              ? Colors.white
-                              : Colors.grey[700],
+                          backgroundColor:
+                              _selectedStudentsGrade ==
+                                      (g == '9' ? '9' : '10')
+                                  ? const Color(0xFF0D4A8A)
+                                  : Colors.transparent,
+                          foregroundColor:
+                              _selectedStudentsGrade ==
+                                      (g == '9' ? '9' : '10')
+                                  ? Colors.white
+                                  : Colors.grey[700],
                           elevation: 0,
-                          side: const BorderSide(color: Color(0xFFD1D5DB)),
+                          side: const BorderSide(
+                              color: Color(0xFFD1D5DB)),
                         ),
-                        onPressed: () =>
-                            setState(() => _selectedStudentsGrade = g == '9' ? '9' : '10'),
-                        child: Text(g == '9' ? 'Grado 9°' : 'Grado 10/11'),
+                        onPressed: () => setState(() =>
+                            _selectedStudentsGrade =
+                                g == '9' ? '9' : '10'),
+                        child: Text(g == '9'
+                            ? 'Grado 9°'
+                            : 'Grado 10/11'),
                       ),
                     ),
                 ],
@@ -1388,22 +1361,31 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 rows: filt.map((al) {
                   final prog = al['progreso'] ?? 'N/A';
                   final estado = al['estado'] ?? 'Activo';
-                  final rec = al['ultimaRecomendacion'] ?? '—';
+                  final rec =
+                      al['ultimaRecomendacion'] ?? '—';
                   final chipEstado = GestureDetector(
-                    onSecondaryTap: () => _toggleEstado(al),
+                    onSecondaryTap: () =>
+                        _toggleEstado(al),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: estado == 'Activo' ? Colors.green[100] : Colors.red[100],
-                        borderRadius: BorderRadius.circular(12),
+                        color: estado == 'Activo'
+                            ? Colors.green[100]
+                            : Colors.red[100],
+                        borderRadius:
+                            BorderRadius.circular(12),
                       ),
                       child: Text(estado,
                           style: TextStyle(
-                              color: estado == 'Activo' ? Colors.green : Colors.red)),
+                              color: estado == 'Activo'
+                                  ? Colors.green
+                                  : Colors.red)),
                     ),
                   );
                   return DataRow(
-                    onSelectChanged: (_) => _abrirEstadisticas(al),
+                    onSelectChanged: (_) =>
+                        _abrirEstadisticas(al),
                     cells: [
                       DataCell(Text(al['nombre'] ?? '—')),
                       DataCell(Text(al['email'] ?? '—')),
@@ -1412,8 +1394,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       DataCell(Text(prog)),
                       DataCell(Row(
                         children: [
-                          IconButton(icon: const Icon(Icons.edit, size: 20), onPressed: () => _editarUsuario(al)),
-                          IconButton(icon: const Icon(Icons.delete, size: 20), onPressed: () => _eliminarUsuario(al['id'])),
+                          IconButton(
+                              icon: const Icon(Icons.edit,
+                                  size: 20),
+                              onPressed: () =>
+                                  _editarUsuario(al)),
+                          IconButton(
+                              icon: const Icon(Icons.delete,
+                                  size: 20),
+                              onPressed: () =>
+                                  _eliminarUsuario(al['id'])),
                         ],
                       )),
                     ],
@@ -1427,11 +1417,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  // ═════════════════════════════════ profesores (igual)
+  // ═════════════════════════════════ profesores
   Widget _renderTeachers() {
     final filt = administradores
-        .where((t) => ((t['nombre'] ?? '').toString().toLowerCase())
-            .contains(_searchTerm.toLowerCase()))
+        .where((t) =>
+            ((t['nombre'] ?? '').toString().toLowerCase())
+                .contains(_searchTerm.toLowerCase()))
         .toList();
 
     return SingleChildScrollView(
@@ -1440,10 +1431,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
       child: Column(
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            mainAxisAlignment:
+                MainAxisAlignment.spaceBetween,
             children: [
               const Text('Profesores Registrados',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold)),
               ElevatedButton.icon(
                   icon: const Icon(Icons.person_add),
                   label: const Text('Agregar Profesor'),
@@ -1463,14 +1457,22 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ],
                 rows: filt.map((p) {
                   return DataRow(cells: [
-                    DataCell(Text(p['nombre']?.toString().isNotEmpty == true
-                        ? p['nombre']
-                        : p['username'] ?? '—')),
+                    DataCell(Text(
+                        p['nombre']?.toString().isNotEmpty ==
+                                true
+                            ? p['nombre']
+                            : p['username'] ?? '—')),
                     DataCell(Text(p['email'] ?? '—')),
                     DataCell(Row(
                       children: [
-                        IconButton(icon: const Icon(Icons.edit), onPressed: () => _editarUsuario(p)),
-                        IconButton(icon: const Icon(Icons.delete), onPressed: () => _eliminarUsuario(p['id'])),
+                        IconButton(
+                            icon: const Icon(Icons.edit),
+                            onPressed: () =>
+                                _editarUsuario(p)),
+                        IconButton(
+                            icon: const Icon(Icons.delete),
+                            onPressed: () =>
+                                _eliminarUsuario(p['id'])),
                       ],
                     )),
                   ]);
@@ -1483,18 +1485,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  // ═════════════════════════════════ ANALÍTICAS — SOLO GRÁFICAS
+  // ═════════════════════════════════ ANALÍTICAS — GRÁFICAS
   Widget _renderAnalytics() {
     if (!_analyticsLoadedOnce && !_analyticsLoading) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _loadAnalytics());
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _loadAnalytics());
     }
 
-    final byDay = (_analytics['finishesByDay'] as List).cast<Map<String, dynamic>>();
+    final byDay = (_analytics['finishesByDay'] as List)
+        .cast<Map<String, dynamic>>();
     final tot9 = estudiantesPorGrado['9']!.length;
     final tot10 = estudiantesPorGrado['10']!.length;
     final tot11 = estudiantesPorGrado['11']!.length;
 
-    int _fin(List<Map<String, dynamic>> xs) => xs.where((e) => e['progreso'] == 'Finalizado').length;
+    int _fin(List<Map<String, dynamic>> xs) =>
+        xs.where((e) => e['progreso'] == 'Finalizado').length;
 
     final fin9 = _fin(estudiantesPorGrado['9']!);
     final fin10 = _fin(estudiantesPorGrado['10']!);
@@ -1517,16 +1522,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
         context: context,
         firstDate: DateTime(now.year - 3),
         lastDate: DateTime(now.year + 1),
-        initialDateRange:
-            _analyticsRange ?? DateTimeRange(start: now.subtract(const Duration(days: 90)), end: now),
+        initialDateRange: _analyticsRange ??
+            DateTimeRange(
+                start: now.subtract(const Duration(days: 90)),
+                end: now),
         helpText: 'Rango para Analíticas',
-        builder: (ctx, child) => Theme(data: Theme.of(ctx), child: child!),
+        builder: (ctx, child) =>
+            Theme(data: Theme.of(ctx), child: child!),
       );
       if (picked != null) await _loadAnalytics(range: picked);
     }
 
-    final seriesByDay =
-        byDay.map((e) => BarPoint(e['date'] as String, (e['count'] as num).toInt())).toList();
+    final seriesByDay = byDay
+        .map((e) =>
+            BarPoint(e['date'] as String, (e['count'] as num).toInt()))
+        .toList();
 
     return SingleChildScrollView(
       controller: _scrollController,
@@ -1535,7 +1545,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+            mainAxisAlignment:
+                MainAxisAlignment.end,
             children: [
               OutlinedButton.icon(
                 icon: const Icon(Icons.date_range),
@@ -1549,8 +1560,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   onPressed: () {
                     final now = DateTime.now();
                     _loadAnalytics(
-                        range:
-                            DateTimeRange(start: now.subtract(const Duration(days: 6)), end: now));
+                        range: DateTimeRange(
+                            start: now
+                                .subtract(const Duration(days: 6)),
+                            end: now));
                   }),
               IconButton(
                   tooltip: '30 días',
@@ -1558,35 +1571,26 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   onPressed: () {
                     final now = DateTime.now();
                     _loadAnalytics(
-                        range:
-                            DateTimeRange(start: now.subtract(const Duration(days: 29)), end: now));
+                        range: DateTimeRange(
+                            start: now
+                                .subtract(const Duration(days: 29)),
+                            end: now));
                   }),
-              IconButton(tooltip: 'Refrescar', icon: const Icon(Icons.refresh), onPressed: _loadAnalytics),
+              IconButton(
+                  tooltip: 'Refrescar',
+                  icon: const Icon(Icons.refresh),
+                  onPressed: _loadAnalytics),
               const SizedBox(width: 8),
               ElevatedButton.icon(
                 icon: const Icon(Icons.download),
                 label: const Text('Excel (datos)'),
-                onPressed: _analyticsLoading ? null : _exportarExcelAnaliticas,
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1465BB), foregroundColor: Colors.white),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.image),
-                label: const Text('Gráficas (PNG)'),
                 onPressed: _analyticsLoading
                     ? null
-                    : () => _pickerExportarPng(
-                          tot9: tot9,
-                          tot10: tot10,
-                          tot11: tot11,
-                          fin9: fin9,
-                          fin10: fin10,
-                          fin11: fin11,
-                          pen9: pen9,
-                          pen10: pen10,
-                          pen11: pen11,
-                        ),
+                    : _exportarExcelAnaliticas,
+                style: ElevatedButton.styleFrom(
+                    backgroundColor:
+                        const Color(0xFF1465BB),
+                    foregroundColor: Colors.white),
               ),
             ],
           ),
@@ -1598,50 +1602,50 @@ class _AdminDashboardState extends State<AdminDashboard> {
           const SizedBox(height: 16),
 
           // 1) Totales por grado
-          RepaintBoundary(
-            key: _keyTotales,
-            child: ChartCard(
-              title: 'Total de estudiantes por grado',
-              child: BarChart(
-                bars: [
-                  BarGroup('9°', [BarSerie('Total', [tot9])]),
-                  BarGroup('10°', [BarSerie('Total', [tot10])]),
-                  BarGroup('11°', [BarSerie('Total', [tot11])]),
-                ],
-                stacked: false,
-                showLegend: false,
-              ),
+          ChartCard(
+            title: 'Total de estudiantes por grado',
+            child: BarChart(
+              bars: [
+                BarGroup('9°', [BarSerie('Total', [tot9])]),
+                BarGroup('10°', [BarSerie('Total', [tot10])]),
+                BarGroup('11°', [BarSerie('Total', [tot11])]),
+              ],
+              stacked: false,
+              showLegend: false,
             ),
           ),
 
           const SizedBox(height: 16),
 
           // 2) Estado por grado
-          RepaintBoundary(
-            key: _keyEstado,
-            child: ChartCard(
-              title: 'Terminados vs Pendientes por grado',
-              child: BarChart(
-                bars: [
-                  BarGroup('9°', [BarSerie('Terminados', [fin9]), BarSerie('Pendientes', [pen9])]),
-                  BarGroup('10°', [BarSerie('Terminados', [fin10]), BarSerie('Pendientes', [pen10])]),
-                  BarGroup('11°', [BarSerie('Terminados', [fin11]), BarSerie('Pendientes', [pen11])]),
-                ],
-                stacked: false,
-                showLegend: true,
-              ),
+          ChartCard(
+            title: 'Terminados vs Pendientes por grado',
+            child: BarChart(
+              bars: [
+                BarGroup('9°', [
+                  BarSerie('Terminados', [fin9]),
+                  BarSerie('Pendientes', [pen9])
+                ]),
+                BarGroup('10°', [
+                  BarSerie('Terminados', [fin10]),
+                  BarSerie('Pendientes', [pen10])
+                ]),
+                BarGroup('11°', [
+                  BarSerie('Terminados', [fin11]),
+                  BarSerie('Pendientes', [pen11])
+                ]),
+              ],
+              stacked: false,
+              showLegend: true,
             ),
           ),
 
           const SizedBox(height: 16),
 
           // 3) Finalizaciones por día
-          RepaintBoundary(
-            key: _keyByDay,
-            child: ChartCard(
-              title: 'Finalizaciones por día (rango seleccionado)',
-              child: BarChartByDay(series: seriesByDay),
-            ),
+          ChartCard(
+            title: 'Finalizaciones por día (rango seleccionado)',
+            child: BarChartByDay(series: seriesByDay),
           ),
         ],
       ),
@@ -1659,12 +1663,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
               focusNode: FocusNode(),
               onKey: (ev) {
                 if (ev is RawKeyDownEvent) {
-                  if (ev.logicalKey == LogicalKeyboardKey.arrowDown) {
-                    _scrollController.animateTo(_scrollController.offset + 100,
-                        duration: const Duration(milliseconds: 100), curve: Curves.easeOut);
-                  } else if (ev.logicalKey == LogicalKeyboardKey.arrowUp) {
-                    _scrollController.animateTo(_scrollController.offset - 100,
-                        duration: const Duration(milliseconds: 100), curve: Curves.easeOut);
+                  if (ev.logicalKey ==
+                      LogicalKeyboardKey.arrowDown) {
+                    _scrollController.animateTo(
+                        _scrollController.offset + 100,
+                        duration: const Duration(
+                            milliseconds: 100),
+                        curve: Curves.easeOut);
+                  } else if (ev.logicalKey ==
+                      LogicalKeyboardKey.arrowUp) {
+                    _scrollController.animateTo(
+                        _scrollController.offset - 100,
+                        duration: const Duration(
+                            milliseconds: 100),
+                        curve: Curves.easeOut);
                   }
                 }
               },
@@ -1701,7 +1713,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// W I D G E T S   D E   G R Á F I C A S  (sin paquetes externos)
+// W I D G E T S   D E   G RÁFICAS  (sin paquetes externos)
 // ═══════════════════════════════════════════════════════════════
 
 class ChartCard extends StatelessWidget {
@@ -1715,14 +1727,22 @@ class ChartCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          crossAxisAlignment:
+              CrossAxisAlignment.stretch,
           children: [
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: const [Text('')]),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                mainAxisAlignment:
+                    MainAxisAlignment.spaceBetween,
+                children: const [Text('')]),
+            Row(
+              mainAxisAlignment:
+                  MainAxisAlignment.spaceBetween,
               children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-                const Icon(Icons.insights, size: 18, color: Colors.grey),
+                Text(title,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold)),
+                const Icon(Icons.insights,
+                    size: 18, color: Colors.grey),
               ],
             ),
             const SizedBox(height: 12),
@@ -1769,8 +1789,10 @@ class BarChart extends StatelessWidget {
     int maxVal = 1;
     for (final g in bars) {
       if (stacked) {
-        final sum =
-            g.series.fold<int>(0, (acc, s) => acc + (s.values.isNotEmpty ? s.values.first : 0));
+        final sum = g.series.fold<int>(
+            0,
+            (acc, s) =>
+                acc + (s.values.isNotEmpty ? s.values.first : 0));
         if (sum > maxVal) maxVal = sum;
       } else {
         for (final s in g.series) {
@@ -1793,26 +1815,37 @@ class BarChart extends StatelessWidget {
         return Column(
           children: [
             Expanded(
-              child: CustomPaint(size: Size(w, h - (showLegend ? 32 : 0)), painter: _BarPainter(chart)),
+              child: CustomPaint(
+                size: Size(
+                    w, h - (showLegend ? 32 : 0)),
+                painter: _BarPainter(chart),
+              ),
             ),
             if (showLegend) const SizedBox(height: 8),
             if (showLegend)
               Wrap(
                 spacing: 16,
-                children: List.generate(bars.first.series.length, (i) {
-                  return Row(mainAxisSize: MainAxisSize.min, children: [
-                    Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: palette[i % palette.length],
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(bars.first.series[i].name,
-                        style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                  ]);
+                children: List.generate(
+                    bars.first.series.length, (i) {
+                  return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color:
+                                palette[i % palette.length],
+                            borderRadius:
+                                BorderRadius.circular(3),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(bars.first.series[i].name,
+                            style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey)),
+                      ]);
                 }),
               ),
           ],
@@ -1842,29 +1875,51 @@ class _BarPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final padding = 32.0;
-    final axisPaint = Paint()..color = const Color(0xFFBDBDBD)..strokeWidth = 1;
-    final gridPaint = Paint()..color = const Color(0xFFE0E0E0)..strokeWidth = 1;
+    final axisPaint = Paint()
+      ..color = const Color(0xFFBDBDBD)
+      ..strokeWidth = 1;
+    final gridPaint = Paint()
+      ..color = const Color(0xFFE0E0E0)
+      ..strokeWidth = 1;
 
-    final chartRect =
-        Rect.fromLTWH(padding + 24, 8, size.width - padding * 2 - 24, size.height - padding * 1.6);
-    final left = chartRect.left, bottom = chartRect.bottom, top = chartRect.top, right = chartRect.right;
+    final chartRect = Rect.fromLTWH(
+        padding + 24,
+        8,
+        size.width - padding * 2 - 24,
+        size.height - padding * 1.6);
+    final left = chartRect.left,
+        bottom = chartRect.bottom,
+        top = chartRect.top,
+        right = chartRect.right;
 
     // Ejes
-    canvas.drawLine(Offset(left, top), Offset(left, bottom), axisPaint);
-    canvas.drawLine(Offset(left, bottom), Offset(right, bottom), axisPaint);
+    canvas.drawLine(Offset(left, top),
+        Offset(left, bottom), axisPaint);
+    canvas.drawLine(Offset(left, bottom),
+        Offset(right, bottom), axisPaint);
 
     // Rejilla Y
-    final textPainter = TextPainter(textDirection: ui.TextDirection.ltr);
+    final textPainter =
+        TextPainter(textDirection: ui.TextDirection.ltr);
     final step = (d.maxValue / 5).ceil();
     for (int i = 0; i <= 5; i++) {
       final yVal = i * step;
-      final y = bottom - (chartRect.height * (yVal / (d.maxValue == 0 ? 1 : d.maxValue)));
-      canvas.drawLine(Offset(left, y), Offset(right, y), gridPaint);
+      final y = bottom -
+          (chartRect.height *
+              (yVal /
+                  (d.maxValue == 0 ? 1 : d.maxValue)));
+      canvas.drawLine(
+          Offset(left, y), Offset(right, y), gridPaint);
       final label = yVal.toString();
-      textPainter.text =
-          TextSpan(text: label, style: const TextStyle(fontSize: 10, color: Colors.grey));
+      textPainter.text = TextSpan(
+          text: label,
+          style: const TextStyle(
+              fontSize: 10, color: Colors.grey));
       textPainter.layout();
-      textPainter.paint(canvas, Offset(left - textPainter.width - 6, y - textPainter.height / 2));
+      textPainter.paint(
+          canvas,
+          Offset(left - textPainter.width - 6,
+              y - textPainter.height / 2));
     }
 
     // Barras
@@ -1879,59 +1934,109 @@ class _BarPainter extends CustomPainter {
 
       // etiqueta X
       final tp = TextPainter(
-        text: TextSpan(text: group.groupLabel, style: const TextStyle(fontSize: 11)),
+        text: TextSpan(
+            text: group.groupLabel,
+            style: const TextStyle(fontSize: 11)),
         textDirection: ui.TextDirection.ltr,
       );
       tp.layout();
-      tp.paint(canvas, Offset(gx + groupWidth / 2 - tp.width / 2, bottom + 6));
+      tp.paint(
+          canvas,
+          Offset(gx + groupWidth / 2 - tp.width / 2,
+              bottom + 6));
 
       if (d.stacked) {
         double accH = 0;
-        for (int si = 0; si < group.series.length; si++) {
+        for (int si = 0;
+            si < group.series.length;
+            si++) {
           final v = group.series[si].values.first;
-          final h = chartRect.height * (v / (d.maxValue == 0 ? 1 : d.maxValue));
-          final barRect =
-              Rect.fromLTWH(gx + groupWidth * 0.25, bottom - (h + accH), groupWidth * 0.5, h);
-          final paint = Paint()..color = d.palette[si % d.palette.length];
-          canvas.drawRRect(RRect.fromRectAndRadius(barRect, const Radius.circular(6)), paint);
+          final h = chartRect.height *
+              (v /
+                  (d.maxValue == 0
+                      ? 1
+                      : d.maxValue));
+          final barRect = Rect.fromLTWH(
+              gx + groupWidth * 0.25,
+              bottom - (h + accH),
+              groupWidth * 0.5,
+              h);
+          final paint = Paint()
+            ..color =
+                d.palette[si % d.palette.length];
+          canvas.drawRRect(
+              RRect.fromRectAndRadius(
+                  barRect, const Radius.circular(6)),
+              paint);
 
           final lab = TextPainter(
-            text: TextSpan(text: '$v', style: const TextStyle(fontSize: 10, color: Colors.black87)),
+            text: TextSpan(
+                text: '$v',
+                style: const TextStyle(
+                    fontSize: 10,
+                    color: Colors.black87)),
             textDirection: ui.TextDirection.ltr,
           );
           lab.layout();
-          lab.paint(canvas, Offset(barRect.center.dx - lab.width / 2, barRect.top - lab.height - 2));
+          lab.paint(
+              canvas,
+              Offset(
+                  barRect.center.dx - lab.width / 2,
+                  barRect.top - lab.height - 2));
 
           accH += h;
         }
       } else {
         final serieCount = group.series.length;
         final totalBarsWidth = groupWidth * 0.7;
-        final singleWidth =
-            (totalBarsWidth - barGap * (serieCount - 1)) / (serieCount == 0 ? 1 : serieCount);
+        final singleWidth = (totalBarsWidth -
+                barGap * (serieCount - 1)) /
+            (serieCount == 0 ? 1 : serieCount);
         final startX = gx + groupWidth * 0.15;
 
-        for (int si = 0; si < serieCount; si++) {
+        for (int si = 0;
+            si < serieCount;
+            si++) {
           final v = group.series[si].values.first;
-          final h = chartRect.height * (v / (d.maxValue == 0 ? 1 : d.maxValue));
-          final x = startX + si * (singleWidth + barGap);
-          final barRect = Rect.fromLTWH(x, bottom - h, singleWidth, h);
-          final paint = Paint()..color = d.palette[si % d.palette.length];
-          canvas.drawRRect(RRect.fromRectAndRadius(barRect, const Radius.circular(6)), paint);
+          final h = chartRect.height *
+              (v /
+                  (d.maxValue == 0
+                      ? 1
+                      : d.maxValue));
+          final x =
+              startX + si * (singleWidth + barGap);
+          final barRect = Rect.fromLTWH(
+              x, bottom - h, singleWidth, h);
+          final paint = Paint()
+            ..color =
+                d.palette[si % d.palette.length];
+          canvas.drawRRect(
+              RRect.fromRectAndRadius(
+                  barRect, const Radius.circular(6)),
+              paint);
 
           final lab = TextPainter(
-            text: TextSpan(text: '$v', style: const TextStyle(fontSize: 10, color: Colors.black87)),
+            text: TextSpan(
+                text: '$v',
+                style: const TextStyle(
+                    fontSize: 10,
+                    color: Colors.black87)),
             textDirection: ui.TextDirection.ltr,
           );
           lab.layout();
-          lab.paint(canvas, Offset(barRect.center.dx - lab.width / 2, barRect.top - lab.height - 2));
+          lab.paint(
+              canvas,
+              Offset(
+                  barRect.center.dx - lab.width / 2,
+                  barRect.top - lab.height - 2));
         }
       }
     }
   }
 
   @override
-  bool shouldRepaint(covariant _BarPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _BarPainter oldDelegate) =>
+      true;
 }
 
 // Barras por día (con eje X de fechas comprimidas)
@@ -1949,9 +2054,11 @@ class BarChartByDay extends StatelessWidget {
   Widget build(BuildContext context) {
     if (series.isEmpty) {
       return const Center(
-          child: Text('Sin datos en el rango seleccionado', style: TextStyle(color: Colors.grey)));
+          child: Text('Sin datos en el rango seleccionado',
+              style: TextStyle(color: Colors.grey)));
     }
-    final maxVal = series.map((e) => e.value).reduce((a, b) => a > b ? a : b);
+    final maxVal =
+        series.map((e) => e.value).reduce((a, b) => a > b ? a : b);
     return LayoutBuilder(
       builder: (_, c) {
         return CustomPaint(
@@ -1971,27 +2078,48 @@ class _BarDayPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final padding = 36.0;
-    final axisPaint = Paint()..color = const Color(0xFFBDBDBD)..strokeWidth = 1;
-    final gridPaint = Paint()..color = const Color(0xFFE0E0E0)..strokeWidth = 1;
-    final chart =
-        Rect.fromLTWH(padding + 24, 8, size.width - padding * 2 - 24, size.height - padding * 1.6);
-    final left = chart.left, bottom = chart.bottom, top = chart.top, right = chart.right;
+    final axisPaint = Paint()
+      ..color = const Color(0xFFBDBDBD)
+      ..strokeWidth = 1;
+    final gridPaint = Paint()
+      ..color = const Color(0xFFE0E0E0)
+      ..strokeWidth = 1;
+    final chart = Rect.fromLTWH(
+        padding + 24,
+        8,
+        size.width - padding * 2 - 24,
+        size.height - padding * 1.6);
+    final left = chart.left,
+        bottom = chart.bottom,
+        top = chart.top,
+        right = chart.right;
 
     // Ejes
-    canvas.drawLine(Offset(left, top), Offset(left, bottom), axisPaint);
-    canvas.drawLine(Offset(left, bottom), Offset(right, bottom), axisPaint);
+    canvas.drawLine(Offset(left, top),
+        Offset(left, bottom), axisPaint);
+    canvas.drawLine(Offset(left, bottom),
+        Offset(right, bottom), axisPaint);
 
     // Rejilla Y
-    final tp = TextPainter(textDirection: ui.TextDirection.ltr);
+    final tp =
+        TextPainter(textDirection: ui.TextDirection.ltr);
     final step = (maxVal / 5).ceil();
     for (int i = 0; i <= 5; i++) {
       final yVal = i * step;
-      final y = bottom - (chart.height * (yVal / (maxVal == 0 ? 1 : maxVal)));
-      canvas.drawLine(Offset(left, y), Offset(right, y), gridPaint);
-      tp.text = TextSpan(text: yVal.toString(), style: const TextStyle(fontSize: 10, color: Colors.grey));
+      final y = bottom -
+          (chart.height *
+              (yVal / (maxVal == 0 ? 1 : maxVal)));
+      canvas.drawLine(
+          Offset(left, y), Offset(right, y), gridPaint);
+      tp.text = TextSpan(
+          text: yVal.toString(),
+          style: const TextStyle(fontSize: 10));
       tp.textDirection = ui.TextDirection.ltr;
       tp.layout();
-      tp.paint(canvas, Offset(left - tp.width - 6, y - tp.height / 2));
+      tp.paint(
+          canvas,
+          Offset(left - tp.width - 6,
+              y - tp.height / 2));
     }
 
     // Barras
@@ -1999,23 +2127,37 @@ class _BarDayPainter extends CustomPainter {
     final barW = chart.width / (count == 0 ? 1 : count);
     for (int i = 0; i < count; i++) {
       final v = d[i].value;
-      final h = chart.height * (v / (maxVal == 0 ? 1 : maxVal));
+      final h = chart.height *
+          (v / (maxVal == 0 ? 1 : maxVal));
       final x = left + i * barW;
-      final rect = Rect.fromLTWH(x + barW * 0.15, bottom - h, barW * 0.7, h);
+      final rect = Rect.fromLTWH(
+          x + barW * 0.15,
+          bottom - h,
+          barW * 0.7,
+          h);
       final paint = Paint()..color = const Color(0xFF90CAF9);
-      canvas.drawRRect(RRect.fromRectAndRadius(rect, const Radius.circular(4)), paint);
+      canvas.drawRRect(
+          RRect.fromRectAndRadius(
+              rect, const Radius.circular(4)),
+          paint);
 
       // etiquetas X (cada ~7 días)
       if (i % (count ~/ 7 + 1) == 0 || i == count - 1) {
         final lbl = d[i].label.substring(5); // mm-dd
-        tp.text = TextSpan(text: lbl, style: const TextStyle(fontSize: 10));
+        tp.text = TextSpan(
+            text: lbl,
+            style: const TextStyle(fontSize: 10));
         tp.textDirection = ui.TextDirection.ltr;
         tp.layout();
-        tp.paint(canvas, Offset(x + barW / 2 - tp.width / 2, bottom + 6));
+        tp.paint(
+            canvas,
+            Offset(x + barW / 2 - tp.width / 2,
+                bottom + 6));
       }
     }
   }
 
   @override
-  bool shouldRepaint(covariant _BarDayPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _BarDayPainter oldDelegate) =>
+      true;
 }
