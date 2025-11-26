@@ -230,54 +230,34 @@ class _AdminDashboardState extends State<AdminDashboard> {
     await _cargarUsuarios();
   }
 
+  // ⭐ VERSIÓN OPTIMIZADA: MENOS LLAMADAS POR ESTUDIANTE
   Future<void> _cargarUsuarios() async {
     setState(() => _isLoading = true);
     try {
       final usuarios = await apiService.fetchUsuarios();
 
+      // Para cada usuario estudiante, solo se consulta UNA vez el progreso
       Future<Map<String, dynamic>> _enriquecer(Map<String, dynamic> u) async {
         final usr = Map<String, dynamic>.from(u);
         usr['estado'] = usr['estado'] ?? 'Activo';
 
-        String _fmt(Map<String, dynamic> t, {required int total}) {
-          final estado = t['estado']?.toString() ?? '';
-          final resp = (t['respondidas'] as num?)?.toInt() ?? 0;
-          final ult = (t['ultima_pregunta'] as num?)?.toInt() ?? 0;
-          final pct = (t['progreso_pct'] as num?)?.toDouble() ?? (total > 0 ? (resp / total) * 100 : 0);
-          if (estado == 'FINALIZADO') return 'Finalizado';
-          if (estado == 'EN_PROGRESO') return 'En progreso: $resp/$total (P$ult) ${pct.toStringAsFixed(0)}%';
-          return '—';
-        }
-
         if (usr['grado'] == 9) {
-          final info = await apiService.progresoUsuarioGrado9(usr['id'], total: kTotalPreguntas9); // ← 57
+          final info = await apiService.progresoUsuarioGrado9(
+            usr['id'],
+            total: kTotalPreguntas9,
+          );
           usr['progreso'] = info['progreso'] ?? '—';
           usr['ultimaRecomendacion'] = info['ultimaRecomendacion'] ?? '—';
-
-          if (usr['ultimaRecomendacion'] == '—') {
-            final tests = await apiService.fetchTestsGrado9PorUsuario(usr['id']);
-            if (tests.isNotEmpty) {
-              final det = await apiService.fetchResultadoTest9PorId(tests.first['id']);
-              usr['ultimaRecomendacion'] = det['resultado'] ?? '—';
-              usr['progreso'] = usr['progreso'] == '—' ? _fmt(tests.first, total: kTotalPreguntas9) : usr['progreso'];
-            }
-          }
           return usr;
         }
 
         if (usr['grado'] == 10 || usr['grado'] == 11) {
-          final info = await apiService.progresoUsuarioGrado10y11(usr['id'], total: kTotalPreguntas10y11); // ← 40
+          final info = await apiService.progresoUsuarioGrado10y11(
+            usr['id'],
+            total: kTotalPreguntas10y11,
+          );
           usr['progreso'] = info['progreso'] ?? '—';
           usr['ultimaRecomendacion'] = info['ultimaRecomendacion'] ?? '—';
-
-          if (usr['ultimaRecomendacion'] == '—') {
-            final tests = await apiService.fetchTestsGrado10y11PorUsuario(usr['id']);
-            if (tests.isNotEmpty) {
-              final det = await apiService.fetchResultadoTest10y11PorId(tests.first['id']);
-              usr['ultimaRecomendacion'] = det['resultado'] ?? '—';
-              usr['progreso'] = usr['progreso'] == '—' ? _fmt(tests.first, total: kTotalPreguntas10y11) : usr['progreso'];
-            }
-          }
           return usr;
         }
 
@@ -288,20 +268,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
       administradores = usuarios.where((u) => u['rol'] == 'admin').toList();
 
-      final est9 = usuarios.where((u) => u['rol'] == 'estudiante' && u['grado'] == 9).toList();
+      final est9  = usuarios.where((u) => u['rol'] == 'estudiante' && u['grado'] == 9).toList();
       final est10 = usuarios.where((u) => u['rol'] == 'estudiante' && u['grado'] == 10).toList();
       final est11 = usuarios.where((u) => u['rol'] == 'estudiante' && u['grado'] == 11).toList();
 
-      estudiantesPorGrado['9'] = await Future.wait(est9.map(_enriquecer));
+      estudiantesPorGrado['9']  = await Future.wait(est9.map(_enriquecer));
       estudiantesPorGrado['10'] = await Future.wait(est10.map(_enriquecer));
       estudiantesPorGrado['11'] = await Future.wait(est11.map(_enriquecer));
     } catch (e) {
       debugPrint('Error al cargar usuarios: $e');
-    }
-    if (mounted) {
-      setState(() => _isLoading = false);
-      _cargarEstadisticas(); // dashboard 9/10/11 técnicos/carreras
-      _startLiveWatch(); // <<< LIVE PROGRESS (polling) — arranca después de cargar
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        _cargarEstadisticas(); // dashboard 9/10/11 técnicos/carreras
+        _startLiveWatch();     // <<< LIVE PROGRESS (polling) — arranca después de cargar
+      }
     }
   }
 
