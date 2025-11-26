@@ -6,7 +6,7 @@ import 'package:flutter_web_plugins/url_strategy.dart';
 // Screens
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
-import 'screens/admin_dashboard.dart';
+import 'screens/admin/admin_layout.dart';  // ⭐ CAMBIO: nuevo import
 import 'screens/estudiante_home.dart';
 import 'screens/test_grado9_screen.dart';
 import 'screens/test_grado_10_11_screen.dart';
@@ -60,7 +60,7 @@ class MyApp extends StatelessWidget {
         // Protegidas por sesión + rol
         '/admin': (context) => const ProtectedRoute(
               requireRoles: ['ADMIN'],
-              child: AdminDashboard(),
+              child: AdminLayout(),  // ⭐ CAMBIO: AdminLayout en vez de AdminDashboard
               loginRouteName: '/',
             ),
         '/estudiante': (context) => const ProtectedRoute(
