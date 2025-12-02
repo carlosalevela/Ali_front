@@ -2,12 +2,15 @@ import 'dart:math' as math; // NUEVO: para animación shake
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
+
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
+
 
 class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin { // NUEVO mixin
   final TextEditingController _usernameController = TextEditingController();
@@ -15,15 +18,18 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   final TextEditingController _emailController    = TextEditingController();
   final ApiService apiService = ApiService();
 
+
   bool _isLoading = false;
   String? _error;
+
 
   // ======= NUEVO: errores por campo =======
   String? _emailError;
   String? _passwordError;
   String? _usernameError;
 
-  // ======= NUEVO: animación de “shake” para el botón Iniciar =======
+
+  // ======= NUEVO: animación de "shake" para el botón Iniciar =======
   late final AnimationController _shakeCtrl = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 500),
@@ -33,6 +39,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     curve: Curves.elasticIn,
   );
   // ================================================================
+
 
   @override
   void initState() {
@@ -49,11 +56,13 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     });
   }
 
+
   @override
   void dispose() {
     _shakeCtrl.dispose(); // NUEVO
     super.dispose();
   }
+
 
   void _login() async {
     setState(() {
@@ -65,13 +74,16 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       _usernameError = null;
     });
 
+
     final result = await apiService.login(
       _usernameController.text.trim(),
       _passwordController.text.trim(),
       _emailController.text.trim(),
     );
 
+
     setState(() => _isLoading = false);
+
 
     if (result is Map && result['success'] == true) {
       final rol = result['role'];
@@ -89,6 +101,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           ? 'Credenciales inválidas'
           : rawMsg;
 
+
       final field = (result is Map
               ? (result['field'] ?? result['error_field'])
               : null)
@@ -98,6 +111,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           ?.toString()
           .toLowerCase();
       final lmsg  = msg.toLowerCase();
+
 
       if (field == 'email' || lmsg.contains('correo') || lmsg.contains('email')) {
         _emailError = msg;
@@ -109,72 +123,16 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         _passwordError = 'Credenciales inválidas';
       }
 
+
       setState(() => _error = msg);
 
-      // Dispara animación de “shake” del botón
+
+      // Dispara animación de "shake" del botón
       _shakeCtrl.forward(from: 0);
       // ================================================================
     }
   }
 
-  // ======= NUEVO: flujo "¿Olvidaste tu contraseña?" (igual al tuyo) =======
-  void _forgotPassword() async {
-    final emailCtrl = TextEditingController(text: _emailController.text.trim());
-
-    final result = await showDialog<Map<String, dynamic>?>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        bool sending = false;
-        return StatefulBuilder(
-          builder: (ctx, setState) => AlertDialog(
-            title: const Text('Recuperar contraseña'),
-            content: TextField(
-              controller: emailCtrl,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(hintText: 'Correo registrado'),
-            ),
-            actions: [
-              TextButton(
-                onPressed: sending ? null : () => Navigator.pop(ctx),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: sending
-                    ? null
-                    : () async {
-                        final email = emailCtrl.text.trim();
-                        if (email.isEmpty) return;
-
-                        setState(() => sending = true);
-                        final resp = await apiService.solicitarRecuperacion(email);
-                        if (ctx.mounted) Navigator.pop(ctx, resp);
-                      },
-                child: sending
-                    ? const SizedBox(
-                        height: 18, width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Enviar enlace'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-
-    if (!mounted || result == null) return;
-
-    final ok = result['success'] == true;
-    final msg = (result['detail'] ?? result['message'] ?? (ok
-        ? 'Si el correo existe, te enviamos un enlace.'
-        : 'No se pudo enviar el enlace.')) as String;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
-    );
-  }
-  // ========================================================
 
   @override
   Widget build(BuildContext context) {
@@ -185,6 +143,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           builder: (context, constraints) {
             final isWide = constraints.maxWidth >= 920;
             final wrapperWidth = isWide ? 980.0 : 420.0;
+
 
             final content = isWide
                 ? Row(
@@ -197,6 +156,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                     ],
                   )
                 : const _LoginCardWrapper();
+
 
             return AnimatedContainer(
               duration: const Duration(milliseconds: 300),
@@ -212,9 +172,11 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   }
 }
 
+
 /// Wrapper que inyecta controladores/estado y pasa animación de shake
 class _LoginCardWrapper extends StatelessWidget {
   const _LoginCardWrapper({super.key});
+
 
   @override
   Widget build(BuildContext context) {
@@ -234,7 +196,6 @@ class _LoginCardWrapper extends StatelessWidget {
         isLoading: state._isLoading,
         error: state._error,
         onLogin: state._login,
-        onForgot: state._forgotPassword,
         // NUEVO: errores y animación
         emailError: state._emailError,
         passwordError: state._passwordError,
@@ -245,6 +206,7 @@ class _LoginCardWrapper extends StatelessWidget {
   }
 }
 
+
 /// ================== TARJETA DEL FORMULARIO (derecha / móvil) ==================
 class _LoginCard extends StatelessWidget {
   const _LoginCard({
@@ -254,7 +216,6 @@ class _LoginCard extends StatelessWidget {
     required this.isLoading,
     required this.error,
     required this.onLogin,
-    required this.onForgot,
     // NUEVO
     this.emailError,
     this.passwordError,
@@ -262,19 +223,21 @@ class _LoginCard extends StatelessWidget {
     this.shake,
   });
 
+
   final TextEditingController usernameController;
   final TextEditingController emailController;
   final TextEditingController passwordController;
   final bool isLoading;
   final String? error;
   final VoidCallback onLogin;
-  final VoidCallback onForgot;
+
 
   // NUEVO
   final String? emailError;
   final String? passwordError;
   final String? usernameError;
   final Animation<double>? shake;
+
 
   @override
   Widget build(BuildContext context) {
@@ -317,6 +280,7 @@ class _LoginCard extends StatelessWidget {
           ),
           const SizedBox(height: 22),
 
+
           _Input(
             controller: emailController,
             hint: 'Email',
@@ -327,6 +291,7 @@ class _LoginCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
 
+
           _PasswordInput(
             controller: passwordController,
             hint: 'Contraseña',
@@ -335,6 +300,7 @@ class _LoginCard extends StatelessWidget {
             isError: passwordError != null,
           ),
           const SizedBox(height: 14),
+
 
           _Input(
             controller: usernameController,
@@ -345,18 +311,11 @@ class _LoginCard extends StatelessWidget {
             isError: usernameError != null,
           ),
 
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: onForgot,
-              child: const Text('¿Olvidaste tu contraseña?'),
-            ),
-          ),
 
           const SizedBox(height: 10),
 
-          // ======= NUEVO: botón con efecto “shake” en fallo =======
+
+          // ======= NUEVO: botón con efecto "shake" en fallo =======
           _ShakeX(
             animation: shake,
             child: SizedBox(
@@ -403,7 +362,9 @@ class _LoginCard extends StatelessWidget {
           ),
           // =========================================================
 
+
           const SizedBox(height: 12),
+
 
           GestureDetector(
             onTap: () => Navigator.pushNamed(context, '/register'),
@@ -417,6 +378,7 @@ class _LoginCard extends StatelessWidget {
             ),
           ),
 
+
           if (error != null) ...[
             const SizedBox(height: 12),
             Text(
@@ -425,6 +387,7 @@ class _LoginCard extends StatelessWidget {
               style: const TextStyle(color: Colors.redAccent),
             ),
           ],
+
 
           const SizedBox(height: 8),
           Opacity(
@@ -441,9 +404,11 @@ class _LoginCard extends StatelessWidget {
   }
 }
 
+
   /// ================== PANEL ILUSTRADO IZQUIERDO (centrado + burbujas) ==================
 class _IllustrationCard extends StatelessWidget {
   const _IllustrationCard();
+
 
   @override
   Widget build(BuildContext context) {
@@ -479,9 +444,11 @@ class _IllustrationCard extends StatelessWidget {
   }
 }
 
+
 // Extract pequeño solo para mantener limpio (no cambia nombres previos)
 class PositionedFillGradient extends StatelessWidget {
   const PositionedFillGradient({super.key});
+
 
   @override
   Widget build(BuildContext context) {
@@ -499,10 +466,12 @@ class PositionedFillGradient extends StatelessWidget {
   }
 }
 
+
 class _Blob extends StatelessWidget {
   const _Blob({required this.size, required this.c1, required this.c2});
   final double size;
   final Color c1, c2;
+
 
   @override
   Widget build(BuildContext context) {
@@ -517,6 +486,7 @@ class _Blob extends StatelessWidget {
   }
 }
 
+
 /// ================== INPUTS ==================
 class _Input extends StatelessWidget {
   const _Input({
@@ -530,15 +500,18 @@ class _Input extends StatelessWidget {
     this.isError = false,
   });
 
+
   final TextEditingController controller;
   final String hint;
   final IconData icon;
   final bool obscure;
   final VoidCallback onSubmit;
 
+
   // NUEVO
   final String? errorText;
   final bool isError;
+
 
   @override
   Widget build(BuildContext context) {
@@ -550,6 +523,7 @@ class _Input extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       borderSide: const BorderSide(color: Colors.redAccent, width: 1.6),
     );
+
 
     return TextField(
       controller: controller,
@@ -577,6 +551,7 @@ class _Input extends StatelessWidget {
   }
 }
 
+
 // Password con toggle (UI)
 class _PasswordInput extends StatefulWidget {
   const _PasswordInput({
@@ -588,20 +563,25 @@ class _PasswordInput extends StatefulWidget {
     this.isError = false,
   });
 
+
   final TextEditingController controller;
   final String hint;
   final VoidCallback onSubmit;
+
 
   // NUEVO
   final String? errorText;
   final bool isError;
 
+
   @override
   State<_PasswordInput> createState() => _PasswordInputState();
 }
 
+
 class _PasswordInputState extends State<_PasswordInput> {
   bool _obscure = true;
+
 
   @override
   Widget build(BuildContext context) {
@@ -613,6 +593,7 @@ class _PasswordInputState extends State<_PasswordInput> {
       borderRadius: BorderRadius.all(Radius.circular(14)),
       borderSide: BorderSide(color: Colors.redAccent, width: 1.6),
     );
+
 
     return TextField(
       controller: widget.controller,
@@ -645,11 +626,13 @@ class _PasswordInputState extends State<_PasswordInput> {
   }
 }
 
-// ======= NUEVO: widget reutilizable para “shake” horizontal =======
+
+// ======= NUEVO: widget reutilizable para "shake" horizontal =======
 class _ShakeX extends StatelessWidget {
   const _ShakeX({required this.child, this.animation});
   final Widget child;
   final Animation<double>? animation;
+
 
   @override
   Widget build(BuildContext context) {
@@ -666,6 +649,7 @@ class _ShakeX extends StatelessWidget {
     );
   }
 }
+
 
 final _cardDeco = BoxDecoration(
   color: Colors.white,
