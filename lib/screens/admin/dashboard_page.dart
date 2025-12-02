@@ -335,11 +335,9 @@ class _DashboardPageState extends State<DashboardPage> {
     final isTablet = screenWidth >= 768;
     final isMobile = screenWidth < 768;
     
-    // Responsive: columnas del grid de métricas
     final metricsColumns = isDesktop ? 4 : (isTablet ? 2 : 1);
     final metricsAspectRatio = isDesktop ? 1.5 : (isTablet ? 1.6 : 2.0);
     
-    // Padding responsive
     final padding = isDesktop ? 24.0 : (isTablet ? 20.0 : 16.0);
 
     return _loading
@@ -349,7 +347,7 @@ class _DashboardPageState extends State<DashboardPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Saludo y fecha
+                // ⭐ Header mejorado con botón visible
                 if (isDesktop) ...[
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -375,12 +373,17 @@ class _DashboardPageState extends State<DashboardPage> {
                           ),
                         ],
                       ),
+                      // ⭐ Botón mejorado con colores visibles
                       ElevatedButton.icon(
                         onPressed: _cargarDatos,
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Actualizar'),
+                        icon: const Icon(Icons.refresh, color: Colors.white),
+                        label: const Text(
+                          'Actualizar',
+                          style: TextStyle(color: Colors.white),
+                        ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF1465BB),
+                          foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(
                             horizontal: 24,
                             vertical: 14,
@@ -388,6 +391,7 @@ class _DashboardPageState extends State<DashboardPage> {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
+                          elevation: 2,
                         ),
                       ),
                     ],
@@ -395,7 +399,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   const SizedBox(height: 32),
                 ],
 
-                // Métricas principales - Responsive Grid
+                // Métricas principales
                 GridView.count(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -436,7 +440,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 ),
                 const SizedBox(height: 24),
 
-                // Distribución por grado - Responsive
+                // Distribución por grado
                 Card(
                   elevation: 2,
                   shape: RoundedRectangleBorder(
@@ -472,7 +476,6 @@ class _DashboardPageState extends State<DashboardPage> {
                           ],
                         ),
                         const SizedBox(height: 24),
-                        // En móvil: columna, en tablet/desktop: fila
                         isMobile
                             ? Column(
                                 children: [
@@ -505,7 +508,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 ),
                 const SizedBox(height: 24),
 
-                // Top técnicos y carreras - Responsive
+                // Top técnicos y carreras
                 if (isDesktop)
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
