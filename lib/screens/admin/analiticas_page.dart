@@ -52,7 +52,6 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
   Future<void> _cargarDatos() async {
     setState(() => _loading = true);
     try {
-      // Cargar estudiantes
       final usuarios = await _api.fetchUsuarios();
       final estudiantes = usuarios.where((u) => u['rol'] == 'estudiante').toList();
       
@@ -60,19 +59,15 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
       final est10 = estudiantes.where((e) => e['grado'] == 10).length;
       final est11 = estudiantes.where((e) => e['grado'] == 11).length;
 
-      // Cargar tests
       final tests9 = await _api.fetchTestsGrado9(limit: 2000, offset: 0);
       final tests1011 = await _api.fetchTestsGrado10y11(limit: 2000, offset: 0);
 
-      // Filtrar por rango
       final tests9Filtrados = tests9.where((t) => _enRango(t)).toList();
       final tests1011Filtrados = tests1011.where((t) => _enRango(t)).toList();
 
-      // Finalizados
       final fin9 = tests9Filtrados.where((t) => _esFinalizado(t)).toList();
       final fin1011 = tests1011Filtrados.where((t) => _esFinalizado(t)).toList();
 
-      // Por técnico (grado 9)
       final Map<String, int> tecCounts = {};
       for (final t in fin9) {
         final tec = _parseTecnico(t['resultado']?.toString());
@@ -83,7 +78,6 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
           .toList()
         ..sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
 
-      // ⭐ CORREGIDO: Por carrera usando _parseCarrera
       final Map<String, int> carCounts = {};
       for (final t in fin1011) {
         final car = _parseCarrera(t['resultado']?.toString());
@@ -94,7 +88,6 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
           .toList()
         ..sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
 
-      // Por día
       final Map<String, int> porDia = {};
       for (final t in [...fin9, ...fin1011]) {
         final fecha = _fechaTest(t);
@@ -159,22 +152,18 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
     return 'Desconocido';
   }
 
-  // ⭐ NUEVO MÉTODO: Parsear carreras universitarias
   String _parseCarrera(String? raw) {
     if (raw == null || raw.trim().isEmpty) return 'Desconocido';
     
-    // Buscar "Carrera sugerida por ALI: XXXXX"
     const tag = 'Carrera sugerida por ALI:';
     final i = raw.indexOf(tag);
     if (i >= 0) {
       final rest = raw.substring(i + tag.length).trim();
-      // Tomar solo la primera línea (antes del salto de línea o "Top-3:")
       final lines = rest.split(RegExp(r'[\n\r]|Top-3:'));
       final carrera = lines.first.trim();
       if (carrera.isNotEmpty) return carrera;
     }
     
-    // Si no encuentra el tag, devolver la primera línea del texto
     final firstLine = raw.split(RegExp(r'[\n\r]')).first.trim();
     if (firstLine.isNotEmpty && !firstLine.contains('¡Hola!')) return firstLine;
     
@@ -198,7 +187,6 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
   Future<void> _exportarExcel() async {
     final ex.Excel wb = ex.Excel.createExcel();
     
-    // Hoja de resumen
     final sh1 = wb['Resumen'];
     sh1.appendRow(['Métrica', 'Valor']);
     sh1.appendRow(['Tests 9° (rango)', _data['totalTests9']]);
@@ -206,21 +194,18 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
     sh1.appendRow(['Finalizados 9°', _data['finalizados9']]);
     sh1.appendRow(['Finalizados 10/11', _data['finalizados1011']]);
 
-    // Hoja técnicos
     final sh2 = wb['Técnicos'];
     sh2.appendRow(['Técnico', 'Conteo']);
     for (final t in _data['porTecnico'] as List) {
       sh2.appendRow([t['name'], t['count']]);
     }
 
-    // Hoja carreras
     final sh3 = wb['Carreras'];
     sh3.appendRow(['Carrera', 'Conteo']);
     for (final c in _data['porCarrera'] as List) {
       sh3.appendRow([c['name'], c['count']]);
     }
 
-    // Hoja por día
     final sh4 = wb['Por Día'];
     sh4.appendRow(['Fecha', 'Finalizados']);
     for (final d in _data['porDia'] as List) {
@@ -242,18 +227,26 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
     }
   }
 
-  Widget _buildResumenTab() {
+  Widget _buildResumenTab(BuildContext context) {
     final estudiantes = _data['estudiantes'] as Map;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isDesktop = screenWidth >= 1024;
+    final isTablet = screenWidth >= 768;
+    
+    // Responsive: columnas del grid
+    final crossAxisCount = isDesktop ? 4 : (isTablet ? 2 : 1);
+    final childAspectRatio = isDesktop ? 2.0 : (isTablet ? 2.2 : 2.5);
+    
     return ListView(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(isDesktop ? 24 : (isTablet ? 20 : 16)),
       children: [
         GridView.count(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
+          crossAxisCount: crossAxisCount,
           crossAxisSpacing: 16,
           mainAxisSpacing: 16,
-          childAspectRatio: 2,
+          childAspectRatio: childAspectRatio,
           children: [
             _buildStatCard('Tests 9° (rango)', '${_data['totalTests9']}', Icons.quiz, Colors.blue),
             _buildStatCard('Tests 10/11 (rango)', '${_data['totalTests1011']}', Icons.quiz, Colors.green),
@@ -264,12 +257,19 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
         const SizedBox(height: 24),
         Card(
           elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: Padding(
-            padding: const EdgeInsets.all(20),
+            padding: EdgeInsets.all(isDesktop ? 24 : 20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Distribución de Estudiantes', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                Text(
+                  'Distribución de Estudiantes',
+                  style: TextStyle(
+                    fontSize: isDesktop ? 20 : 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 20),
                 _buildBarChart([
                   {'label': 'Grado 9°', 'value': estudiantes['9'], 'color': Colors.blue},
@@ -284,92 +284,206 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
     );
   }
 
-  Widget _buildTecnicosCarrerasTab() {
+  Widget _buildTecnicosCarrerasTab(BuildContext context) {
     final tecnicos = _data['porTecnico'] as List<Map<String, dynamic>>;
     final carreras = _data['porCarrera'] as List<Map<String, dynamic>>;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isDesktop = screenWidth >= 1024;
+    final isTablet = screenWidth >= 768;
 
     return ListView(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(isDesktop ? 24 : (isTablet ? 20 : 16)),
       children: [
-        Card(
-          elevation: 2,
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Top Técnicos (Grado 9°)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 20),
-                ...tecnicos.take(5).map((t) => _buildProgressBar(
-                  t['name'] as String,
-                  t['count'] as int,
-                  tecnicos.isNotEmpty ? tecnicos.first['count'] as int : 1,
-                  Colors.blue,
-                )),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 24),
-        Card(
-          elevation: 2,
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Top Carreras (10°/11°)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 20),
-                ...carreras.take(5).map((c) => _buildProgressBar(
-                  c['name'] as String,
-                  c['count'] as int,
-                  carreras.isNotEmpty ? carreras.first['count'] as int : 1,
-                  Colors.green,
-                )),
-              ],
-            ),
-          ),
-        ),
+        // En desktop, mostrar en dos columnas
+        if (isDesktop)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _buildTecnicosCard(tecnicos, isDesktop)),
+              const SizedBox(width: 24),
+              Expanded(child: _buildCarrerasCard(carreras, isDesktop)),
+            ],
+          )
+        else ...[
+          _buildTecnicosCard(tecnicos, isDesktop),
+          const SizedBox(height: 24),
+          _buildCarrerasCard(carreras, isDesktop),
+        ],
       ],
     );
   }
 
-  // ⭐ MEJORADA: Tab de tendencias con gráfica más visual
-  Widget _buildTendenciasTab() {
+  Widget _buildTecnicosCard(List<Map<String, dynamic>> tecnicos, bool isDesktop) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: EdgeInsets.all(isDesktop ? 24 : 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.engineering, color: Colors.blue, size: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Top Técnicos (Grado 9°)',
+                    style: TextStyle(
+                      fontSize: isDesktop ? 20 : 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            if (tecnicos.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32.0),
+                  child: Text('Sin datos disponibles', style: TextStyle(color: Colors.grey)),
+                ),
+              )
+            else
+              ...tecnicos.take(5).map((t) => _buildProgressBar(
+                t['name'] as String,
+                t['count'] as int,
+                tecnicos.first['count'] as int,
+                Colors.blue,
+              )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCarrerasCard(List<Map<String, dynamic>> carreras, bool isDesktop) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: EdgeInsets.all(isDesktop ? 24 : 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.school, color: Colors.green, size: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Top Carreras (10°/11°)',
+                    style: TextStyle(
+                      fontSize: isDesktop ? 20 : 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            if (carreras.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32.0),
+                  child: Text('Sin datos disponibles', style: TextStyle(color: Colors.grey)),
+                ),
+              )
+            else
+              ...carreras.take(5).map((c) => _buildProgressBar(
+                c['name'] as String,
+                c['count'] as int,
+                carreras.first['count'] as int,
+                Colors.green,
+              )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTendenciasTab(BuildContext context) {
     final porDia = _data['porDia'] as List<Map<String, dynamic>>;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isDesktop = screenWidth >= 1024;
+    final isTablet = screenWidth >= 768;
+    
+    // Altura del gráfico responsive
+    final chartHeight = isDesktop ? 450.0 : (isTablet ? 380.0 : 300.0);
     
     return ListView(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(isDesktop ? 24 : (isTablet ? 20 : 16)),
       children: [
         Card(
           elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: Padding(
-            padding: const EdgeInsets.all(20),
+            padding: EdgeInsets.all(isDesktop ? 24 : 20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 12,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    const Text('Tests Finalizados por Día', 
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.timeline, color: Colors.blue, size: 24),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Tests Finalizados por Día',
+                          style: TextStyle(
+                            fontSize: isDesktop ? 20 : 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
                     if (porDia.isNotEmpty)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         decoration: BoxDecoration(
                           color: Colors.blue.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
                           'Total: ${porDia.fold<int>(0, (sum, item) => sum + (item['count'] as int))} tests',
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blue),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue,
+                          ),
                         ),
                       ),
                   ],
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
                 SizedBox(
-                  height: 400,
+                  height: chartHeight,
                   child: porDia.isEmpty
                       ? const Center(
                           child: Column(
@@ -377,8 +491,10 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
                             children: [
                               Icon(Icons.insights, size: 64, color: Colors.grey),
                               SizedBox(height: 16),
-                              Text('Sin datos en el rango seleccionado', 
-                                  style: TextStyle(color: Colors.grey, fontSize: 16)),
+                              Text(
+                                'Sin datos en el rango seleccionado',
+                                style: TextStyle(color: Colors.grey, fontSize: 16),
+                              ),
                             ],
                           ),
                         )
@@ -395,6 +511,7 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
   Widget _buildStatCard(String label, String value, IconData icon, Color color) {
     return Card(
       elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
@@ -405,7 +522,7 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
                 color: color.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, size: 32, color: color),
+              child: Icon(icon, size: 28, color: color),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -413,8 +530,17 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(value, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
-                  Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600]), maxLines: 2),
+                  Text(
+                    value,
+                    style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    label,
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ],
               ),
             ),
@@ -427,23 +553,48 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
   Widget _buildProgressBar(String label, int value, int max, Color color) {
     final progress = max > 0 ? value / max : 0.0;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.only(bottom: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Expanded(child: Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500))),
-              Text('$value', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color)),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '$value',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 8),
-          LinearProgressIndicator(
-            value: progress,
-            backgroundColor: Colors.grey[200],
-            valueColor: AlwaysStoppedAnimation<Color>(color),
-            minHeight: 10,
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: progress,
+              backgroundColor: Colors.grey[200],
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+              minHeight: 12,
+            ),
           ),
         ],
       ),
@@ -461,7 +612,7 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
         final progress = maxValue > 0 ? value / maxValue : 0.0;
 
         return Padding(
-          padding: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.only(bottom: 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -469,15 +620,28 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                  Text('$value', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color)),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '$value',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color),
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 8),
-              LinearProgressIndicator(
-                value: progress,
-                backgroundColor: Colors.grey[200],
-                valueColor: AlwaysStoppedAnimation<Color>(color),
-                minHeight: 12,
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  backgroundColor: Colors.grey[200],
+                  valueColor: AlwaysStoppedAnimation<Color>(color),
+                  minHeight: 14,
+                ),
               ),
             ],
           ),
@@ -488,59 +652,137 @@ class _AnaliticasPageState extends State<AnaliticasPage> with SingleTickerProvid
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 768;
+    
     final rangeText = _dateRange != null
         ? '${DateFormat('d MMM', 'es').format(_dateRange!.start)} - ${DateFormat('d MMM yyyy', 'es').format(_dateRange!.end)}'
         : 'Seleccionar rango';
 
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        title: const Text('Analíticas'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
-        actions: [
-          OutlinedButton.icon(
-            icon: const Icon(Icons.date_range),
-            label: Text(rangeText),
-            onPressed: _seleccionarRango,
+    return Column(
+      children: [
+        // Header con acciones - Responsive
+        Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: isMobile ? 16 : 24,
+            vertical: 16,
           ),
-          const SizedBox(width: 8),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _cargarDatos,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
-          IconButton(
-            icon: const Icon(Icons.download),
-            onPressed: _exportarExcel,
-          ),
-          const SizedBox(width: 16),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: Colors.black,
-          tabs: const [
-            Tab(text: 'Resumen'),
-            Tab(text: 'Técnicos/Carreras'),
-            Tab(text: 'Tendencias'),
-          ],
-        ),
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildResumenTab(),
-                _buildTecnicosCarrerasTab(),
-                _buildTendenciasTab(),
+          child: Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            alignment: WrapAlignment.spaceBetween,
+            children: [
+              // Botones de acción - Apilados en móvil
+              if (isMobile) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.date_range, size: 18),
+                    label: Text(rangeText, style: const TextStyle(fontSize: 13)),
+                    onPressed: _seleccionarRango,
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: const Text('Recargar', style: TextStyle(fontSize: 13)),
+                        onPressed: _cargarDatos,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.download, size: 18),
+                        label: const Text('Excel', style: TextStyle(fontSize: 13)),
+                        onPressed: _exportarExcel,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1465BB),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ] else ...[
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.date_range),
+                  label: Text(rangeText),
+                  onPressed: _seleccionarRango,
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.refresh),
+                      onPressed: _cargarDatos,
+                      tooltip: 'Recargar',
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.download),
+                      label: const Text('Exportar Excel'),
+                      onPressed: _exportarExcel,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1465BB),
+                      ),
+                    ),
+                  ],
+                ),
               ],
-            ),
+            ],
+          ),
+        ),
+        
+        // TabBar - Scrollable en móvil
+        Container(
+          color: Colors.white,
+          child: TabBar(
+            controller: _tabController,
+            labelColor: const Color(0xFF1465BB),
+            unselectedLabelColor: Colors.grey,
+            indicatorColor: const Color(0xFF1465BB),
+            isScrollable: isMobile,
+            tabs: const [
+              Tab(text: 'Resumen'),
+              Tab(text: 'Técnicos/Carreras'),
+              Tab(text: 'Tendencias'),
+            ],
+          ),
+        ),
+        
+        // Contenido
+        Expanded(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildResumenTab(context),
+                    _buildTecnicosCarrerasTab(context),
+                    _buildTendenciasTab(context),
+                  ],
+                ),
+        ),
+      ],
     );
   }
 }
 
-// ⭐ NUEVA: Gráfica de línea mejorada y más visual
+// Gráfica de línea mejorada (sin cambios, ya es responsive)
 class ImprovedLineChart extends StatelessWidget {
   final List<Map<String, dynamic>> data;
 
@@ -569,19 +811,10 @@ class ImprovedLineChartPainter extends CustomPainter {
     final chartWidth = size.width - padding * 2;
     final chartHeight = size.height - padding * 2;
 
-    // Fondo con grid
     _drawGrid(canvas, size, padding, chartWidth, chartHeight, maxValue);
-
-    // Área bajo la curva (gradiente)
     _drawAreaUnderCurve(canvas, size, padding, chartWidth, chartHeight, maxValue);
-
-    // Línea principal
     _drawLine(canvas, size, padding, chartWidth, chartHeight, maxValue);
-
-    // Puntos y valores
     _drawPointsAndLabels(canvas, size, padding, chartWidth, chartHeight, maxValue);
-
-    // Etiquetas de fechas (eje X)
     _drawDateLabels(canvas, size, padding, chartWidth);
   }
 
@@ -590,7 +823,6 @@ class ImprovedLineChartPainter extends CustomPainter {
       ..color = Colors.grey[200]!
       ..strokeWidth = 1;
 
-    // Líneas horizontales
     for (int i = 0; i <= 5; i++) {
       final y = size.height - padding - (chartHeight / 5) * i;
       canvas.drawLine(
@@ -599,7 +831,6 @@ class ImprovedLineChartPainter extends CustomPainter {
         gridPaint,
       );
 
-      // Etiqueta del eje Y
       final textPainter = TextPainter(
         text: TextSpan(
           text: '${(maxValue / 5 * i).round()}',
@@ -611,7 +842,6 @@ class ImprovedLineChartPainter extends CustomPainter {
       textPainter.paint(canvas, Offset(padding - textPainter.width - 8, y - textPainter.height / 2));
     }
 
-    // Ejes principales
     final axisPaint = Paint()
       ..color = Colors.grey[400]!
       ..strokeWidth = 2;
@@ -695,11 +925,9 @@ class ImprovedLineChartPainter extends CustomPainter {
       final y = size.height - padding - (chartHeight * (data[i]['count'] as int) / maxValue);
       final count = data[i]['count'] as int;
 
-      // Punto
       canvas.drawCircle(Offset(x, y), 6, pointPaint);
       canvas.drawCircle(Offset(x, y), 6, pointBorderPaint);
 
-      // Valor encima del punto
       final textPainter = TextPainter(
         text: TextSpan(
           text: '$count',
@@ -720,7 +948,6 @@ class ImprovedLineChartPainter extends CustomPainter {
   }
 
   void _drawDateLabels(Canvas canvas, Size size, double padding, double chartWidth) {
-    // Mostrar solo algunas fechas para no saturar
     final step = (data.length / 6).ceil().clamp(1, data.length);
     
     for (int i = 0; i < data.length; i += step) {

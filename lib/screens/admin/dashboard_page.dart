@@ -45,11 +45,9 @@ class _DashboardPageState extends State<DashboardPage> {
       final grado10 = estudiantes.where((e) => e['grado'] == 10).length;
       final grado11 = estudiantes.where((e) => e['grado'] == 11).length;
 
-      // Obtener tests finalizados
       final tests9 = await _api.fetchTestsGrado9(estado: 'FINALIZADO', limit: 100, offset: 0);
       final tests1011 = await _api.fetchTestsGrado10y11(estado: 'FINALIZADO', limit: 100, offset: 0);
 
-      // Top técnicos
       final Map<String, int> tecCounts = {};
       for (final t in tests9) {
         final tec = _parseTecnico(t['resultado']?.toString());
@@ -60,7 +58,6 @@ class _DashboardPageState extends State<DashboardPage> {
           .toList()
         ..sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
 
-      // ⭐ CORREGIDO: Top carreras usando _parseCarrera
       final Map<String, int> carCounts = {};
       for (final t in tests1011) {
         final car = _parseCarrera(t['resultado']?.toString());
@@ -106,49 +103,63 @@ class _DashboardPageState extends State<DashboardPage> {
     return 'Desconocido';
   }
 
-  // ⭐ NUEVO MÉTODO: Parsear carreras universitarias
   String _parseCarrera(String? raw) {
     if (raw == null || raw.trim().isEmpty) return 'Desconocido';
     
-    // Buscar "Carrera sugerida por ALI: XXXXX"
     const tag = 'Carrera sugerida por ALI:';
     final i = raw.indexOf(tag);
     if (i >= 0) {
       final rest = raw.substring(i + tag.length).trim();
-      // Tomar solo la primera línea (antes del salto de línea o "Top-3:")
       final lines = rest.split(RegExp(r'[\n\r]|Top-3:'));
       final carrera = lines.first.trim();
       if (carrera.isNotEmpty) return carrera;
     }
     
-    // Si no encuentra el tag, devolver la primera línea del texto
     final firstLine = raw.split(RegExp(r'[\n\r]')).first.trim();
     if (firstLine.isNotEmpty && !firstLine.contains('¡Hola!')) return firstLine;
     
     return 'Desconocido';
   }
 
-  Widget _buildMetricCard(String title, String value, IconData icon, Color color) {
+  Widget _buildMetricCard(String title, String value, IconData icon, Color color, {bool isDesktop = true}) {
     return Card(
       elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        padding: EdgeInsets.all(isDesktop ? 20 : 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Icon(icon, size: 32, color: color),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: color.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Text(
-                    '+5%',
-                    style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold),
+                  child: Icon(icon, size: isDesktop ? 28 : 24, color: color),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.trending_up, size: 14, color: Colors.green.shade700),
+                      const SizedBox(width: 4),
+                      Text(
+                        '+5%',
+                        style: TextStyle(
+                          color: Colors.green.shade700,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -156,12 +167,20 @@ class _DashboardPageState extends State<DashboardPage> {
             const SizedBox(height: 16),
             Text(
               value,
-              style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: isDesktop ? 32 : 28,
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFF1E293B),
+              ),
             ),
             const SizedBox(height: 4),
             Text(
               title,
-              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),
@@ -169,18 +188,45 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _buildTopList(String title, List<Map<String, dynamic>> items, Color color) {
+  Widget _buildTopList(String title, List<Map<String, dynamic>> items, Color color, IconData icon, {bool isDesktop = true}) {
     if (items.isEmpty) {
       return Card(
         elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: EdgeInsets.all(isDesktop ? 24 : 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon, color: color, size: 24),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: isDesktop ? 18 : 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 20),
-              const Center(child: Text('Sin datos', style: TextStyle(color: Colors.grey))),
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32.0),
+                  child: Text('Sin datos', style: TextStyle(color: Colors.grey)),
+                ),
+              ),
             ],
           ),
         ),
@@ -191,12 +237,34 @@ class _DashboardPageState extends State<DashboardPage> {
 
     return Card(
       elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: EdgeInsets.all(isDesktop ? 24 : 20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: color, size: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: isDesktop ? 18 : 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 20),
             ...items.map((item) {
               final name = item['name'] as String;
@@ -214,22 +282,41 @@ class _DashboardPageState extends State<DashboardPage> {
                         Expanded(
                           child: Text(
                             name,
-                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
                             overflow: TextOverflow.ellipsis,
+                            maxLines: 2,
                           ),
                         ),
-                        Text(
-                          '$count',
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color),
+                        const SizedBox(width: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: color.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '$count',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: color,
+                            ),
+                          ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    LinearProgressIndicator(
-                      value: progress,
-                      backgroundColor: Colors.grey[200],
-                      valueColor: AlwaysStoppedAnimation<Color>(color),
-                      minHeight: 8,
+                    const SizedBox(height: 10),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        backgroundColor: Colors.grey[200],
+                        valueColor: AlwaysStoppedAnimation<Color>(color),
+                        minHeight: 10,
+                      ),
                     ),
                   ],
                 ),
@@ -243,131 +330,264 @@ class _DashboardPageState extends State<DashboardPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        title: const Text('Dashboard'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _cargarDatos,
-          ),
-          const SizedBox(width: 16),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Métricas principales
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: 4,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                    childAspectRatio: 1.5,
-                    children: [
-                      _buildMetricCard(
-                        'Estudiantes',
-                        '${_stats['totalEstudiantes']}',
-                        Icons.school,
-                        Colors.blue,
-                      ),
-                      _buildMetricCard(
-                        'Profesores',
-                        '${_stats['totalProfesores']}',
-                        Icons.person,
-                        Colors.green,
-                      ),
-                      _buildMetricCard(
-                        'Tests Completados',
-                        '${_stats['testsCompletados']}',
-                        Icons.check_circle,
-                        Colors.purple,
-                      ),
-                      _buildMetricCard(
-                        'Tests Pendientes',
-                        '${_stats['testsPendientes']}',
-                        Icons.pending,
-                        Colors.orange,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isDesktop = screenWidth >= 1024;
+    final isTablet = screenWidth >= 768;
+    final isMobile = screenWidth < 768;
+    
+    // Responsive: columnas del grid de métricas
+    final metricsColumns = isDesktop ? 4 : (isTablet ? 2 : 1);
+    final metricsAspectRatio = isDesktop ? 1.5 : (isTablet ? 1.6 : 2.0);
+    
+    // Padding responsive
+    final padding = isDesktop ? 24.0 : (isTablet ? 20.0 : 16.0);
 
-                  // Distribución por grado
-                  Card(
-                    elevation: 2,
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
+    return _loading
+        ? const Center(child: CircularProgressIndicator())
+        : SingleChildScrollView(
+            padding: EdgeInsets.all(padding),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Saludo y fecha
+                if (isDesktop) ...[
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Distribución por Grado',
-                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 20),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                            children: [
-                              _buildGradePill('9°', _stats['grado9'], Colors.blue),
-                              _buildGradePill('10°', _stats['grado10'], Colors.green),
-                              _buildGradePill('11°', _stats['grado11'], Colors.purple),
-                            ],
+                          const Text(
+                            '¡Bienvenido de nuevo!',
+                            style: TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1E293B),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            DateFormat('EEEE, d MMMM yyyy', 'es').format(DateTime.now()),
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
                           ),
                         ],
                       ),
+                      ElevatedButton.icon(
+                        onPressed: _cargarDatos,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Actualizar'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1465BB),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 14,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 32),
+                ],
+
+                // Métricas principales - Responsive Grid
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: metricsColumns,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                  childAspectRatio: metricsAspectRatio,
+                  children: [
+                    _buildMetricCard(
+                      'Estudiantes',
+                      '${_stats['totalEstudiantes']}',
+                      Icons.school_rounded,
+                      const Color(0xFF3B82F6),
+                      isDesktop: isDesktop,
+                    ),
+                    _buildMetricCard(
+                      'Profesores',
+                      '${_stats['totalProfesores']}',
+                      Icons.person_rounded,
+                      const Color(0xFF10B981),
+                      isDesktop: isDesktop,
+                    ),
+                    _buildMetricCard(
+                      'Tests Completados',
+                      '${_stats['testsCompletados']}',
+                      Icons.check_circle_rounded,
+                      const Color(0xFF8B5CF6),
+                      isDesktop: isDesktop,
+                    ),
+                    _buildMetricCard(
+                      'Tests Pendientes',
+                      '${_stats['testsPendientes']}',
+                      Icons.pending_rounded,
+                      const Color(0xFFF59E0B),
+                      isDesktop: isDesktop,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+
+                // Distribución por grado - Responsive
+                Card(
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.all(isDesktop ? 24 : 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                Icons.bar_chart_rounded,
+                                color: Colors.blue,
+                                size: 24,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Distribución por Grado',
+                              style: TextStyle(
+                                fontSize: isDesktop ? 18 : 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                        // En móvil: columna, en tablet/desktop: fila
+                        isMobile
+                            ? Column(
+                                children: [
+                                  _buildGradePill('9°', _stats['grado9'], const Color(0xFF3B82F6)),
+                                  const SizedBox(height: 12),
+                                  _buildGradePill('10°', _stats['grado10'], const Color(0xFF10B981)),
+                                  const SizedBox(height: 12),
+                                  _buildGradePill('11°', _stats['grado11'], const Color(0xFF8B5CF6)),
+                                ],
+                              )
+                            : Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                children: [
+                                  Expanded(
+                                    child: _buildGradePill('9°', _stats['grado9'], const Color(0xFF3B82F6)),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: _buildGradePill('10°', _stats['grado10'], const Color(0xFF10B981)),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: _buildGradePill('11°', _stats['grado11'], const Color(0xFF8B5CF6)),
+                                  ),
+                                ],
+                              ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 24),
+                ),
+                const SizedBox(height: 24),
 
-                  // Top técnicos y carreras
+                // Top técnicos y carreras - Responsive
+                if (isDesktop)
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: _buildTopList('Top Técnicos', _tecnicosTop, Colors.blue),
+                        child: _buildTopList(
+                          'Top Técnicos',
+                          _tecnicosTop,
+                          const Color(0xFF3B82F6),
+                          Icons.engineering_rounded,
+                          isDesktop: true,
+                        ),
                       ),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: 24),
                       Expanded(
-                        child: _buildTopList('Top Carreras', _carrerasTop, Colors.green),
+                        child: _buildTopList(
+                          'Top Carreras',
+                          _carrerasTop,
+                          const Color(0xFF10B981),
+                          Icons.school_rounded,
+                          isDesktop: true,
+                        ),
                       ),
                     ],
+                  )
+                else ...[
+                  _buildTopList(
+                    'Top Técnicos',
+                    _tecnicosTop,
+                    const Color(0xFF3B82F6),
+                    Icons.engineering_rounded,
+                    isDesktop: false,
+                  ),
+                  const SizedBox(height: 24),
+                  _buildTopList(
+                    'Top Carreras',
+                    _carrerasTop,
+                    const Color(0xFF10B981),
+                    Icons.school_rounded,
+                    isDesktop: false,
                   ),
                 ],
-              ),
+              ],
             ),
-    );
+          );
   }
 
   Widget _buildGradePill(String label, int count, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color, width: 2),
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.3), width: 2),
       ),
       child: Column(
         children: [
           Text(
             label,
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color),
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
             '$count',
-            style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: color),
+            style: TextStyle(
+              fontSize: 36,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
           ),
+          const SizedBox(height: 4),
           Text(
             'estudiantes',
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.grey[600],
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),
